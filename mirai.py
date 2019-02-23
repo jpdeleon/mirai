@@ -36,7 +36,7 @@ SITES = {'OAO': (34.5761, 133.5941, 343, "Asia/Tokyo"),
          'TCS': (28.291, 343.5033, 2395, "UTC"), 
          'SBO': (-31.2733, 149.0617, 1145, "Australia/Queensland"), #siding spring observatory
          'TRO': (-30.1692, -70.805, 2286, "America/Santiago"), #cerro tololo observatory
-         'TNO': (111, 111, 0, "Asia/Thailand") #
+         'TNO': (18.59056, 98.48656, 2457, "Asia/Thailand") #
         }
 
 def get_ra_dec(epicnum,verbose=False):
