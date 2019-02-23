@@ -1,0 +1,2 @@
+#name t0 per dur obs_start obs_end ra dec site
+TOI460 2458411.065871 0.52 0.9333 2019-01-01 2019-02-23 47.643478 -9.27681 OAO

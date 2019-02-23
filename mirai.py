@@ -111,7 +111,7 @@ if __name__ == '__main__':
     obs_time2   = ' '.join((args.end_date, args.end_time))
     obs_start = Time(obs_time1)
     obs_end   = Time(obs_time2)
-    sitename  = args.obs_site_name
+    sitename  = args.obs_site_name.upper()
     timezone  = args.timezone
     use_local_timezone = args.use_local_timezone
     
@@ -167,22 +167,24 @@ if __name__ == '__main__':
                                 name=targetname+' b')
     
     if exclude_partial_transit:
-        #FIXME: why next_primary_ingress_egress_time does not accept obs_end?
+        #check if the star is observable between ingress and egress
         ing_egr_times = ephemeris.next_primary_ingress_egress_time(obs_start, 
                                                                    n_eclipses=n_transits)
         idx1 = is_event_observable(constraints, 
                               observatory_site, 
                               targetloc,  
                               times_ingress_egress=ing_egr_times)[0]
-        #check if computed time does not exceed the specified obs_end
+        #check if computed time exceed the specified obs_end; otherwise report
         idx2 = [True if egr<obs_end else False for ing,egr in ing_egr_times[idx1]]
-        partial_events = ing_egr_times[idx1][idx2].iso
-        nobs = len(partial_events)
         
         if np.any(idx1):
             #in case any predicted transit is observable, 
             #take first date and compare to specified end of observation
             ing,egr=ing_egr_times[idx1][0]
+            
+            partial_events = ing_egr_times[idx1][idx2].iso
+            nobs = len(partial_events)
+        
             if egr > obs_end:
                 print('{}: Next observable event from {} is on {}'
                       .format(targetname, sitename, time))
@@ -193,20 +195,22 @@ if __name__ == '__main__':
             print('{}: No observable full transit from {} between {} & {}'
                   .format(targetname, sitename, obs_time1, obs_time2))
     else:
-        #FIXME: why next_primary_eclipse_time does not accept obs_end?
+        #check if the star is at least observable at the mid-transit time
         midtransit_times = ephemeris.next_primary_eclipse_time(obs_start, 
                                                                n_eclipses=n_transits)
         idx1 = is_event_observable(constraints, 
                               observatory_site, 
                               targetloc, 
                               times=midtransit_times)[0]
-        #check if computed time does not exceed the specified obs_end
+        #check if computed time exceed the specified obs_end; otherwise report
         idx2 = [True if mid<obs_end else False for mid in midtransit_times[idx1]]
-        full_events = midtransit_times[idx1][idx2].iso
-        nobs = len(full_events)
         
         if np.any(idx1):
             time=midtransit_times[idx1][0]
+            
+            full_events = midtransit_times[idx1][idx2].iso
+            nobs = len(full_events)
+        
             if time > obs_end:
                 print('{}: Next observable event from {} is on {}'
                       .format(targetname, sitename, time))

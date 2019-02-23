@@ -13,9 +13,10 @@ transit ephemeris calculator
 * need to be cross-checked with output of NExSci and/or TTF web tools
 
 ## Notes on the algorithm
-* `next_primary_eclipse_time` method of `EclipsingSystem` class is used to compute the number of transit after a given epoch of periastron passage, where `n_eclipses`=100 by default. `n_eclipses` can be erroneously set to a small number which does not reach the specified `obs_end` e.g. computing 100 eclipses after given epoch may not be enough if the specified `end_date` is say longer than 1 year from specified epoch. Perhaps, `n_eclipses` should be increased when specified end date is longer than a few months from the given epoch.
-* `obs_end` argument is only used to compare if the first observable primary transit happens before this date. 
+* `next_primary_eclipse_time` method of `EclipsingSystem` class is used to compute the number of transit after a given epoch of periastron passage, where `n_eclipses`=100 by default. `n_eclipses` can be erroneously set to a small number which does not reach the specified `obs_end` e.g. computing 100 eclipses may not be enough if the specified end date is say longer than 1 year from specified epoch. Perhaps, `n_eclipses` should be increased when specified end date is longer than a few months from the given epoch.
+* `obs_end` argument is used to compare if the first observable primary transit happens before this date and discards all observable events after this date
 
 ## Notes on things to improve
+* partial transit calculation only checks if target is observable during midtransit time; consider more partial states
 * a file with input values should be read by a function that maps transit ephemerides to a given target
 * batch script should be used to compute transit times of one object observable from several (default) observatories 
