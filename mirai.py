@@ -120,15 +120,18 @@ if __name__ == '__main__':
     site_elev = args.site_elev
     
     #set-up obs constraints
-    min_local_time = dt.time(19, 0)  # 7:00 pm local time 
-    max_local_time = dt.time(7, 0)   # 6:00 am local time
+    min_local_time1 = dt.time(19, 0)  # 7:00 pm local time 
+    max_local_time1 = dt.time(0, 0)   # midnight local time
+    min_local_time2 = dt.time(0, 1)  # after midnight pm local time 
+    max_local_time2 = dt.time(6, 0)   # 6 am local time
     target_altitude_limit = args.alt_limit
     min_moon_sep   = args.min_moon_sep
     
     #see https://astroplan.readthedocs.io/en/latest/tutorials/constraints.html
     constraints = [AtNightConstraint.twilight_civil(),
                AltitudeConstraint(min=target_altitude_limit*u.deg),
-               LocalTimeConstraint(min=min_local_time, max=max_local_time),
+               LocalTimeConstraint(min=min_local_time1, max=max_local_time1),
+               #LocalTimeConstraint(min=min_local_time2, max=max_local_time2),
                MoonSeparationConstraint(min=min_moon_sep*u.deg)]
 
     if np.all([target_RA, target_Dec]):

@@ -10,6 +10,7 @@ transit ephemeris calculator
 
 ## Issues
 * using local time or UT yield identical results
+* only transits on first half night is reported; should check LocalTimeConstraint
 * need to be cross-checked with output of NExSci and/or TTF web tools
 
 ## Notes on the algorithm
