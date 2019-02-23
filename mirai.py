@@ -20,8 +20,8 @@ from astroplan.plots import plot_airmass
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 import astropy.units as u
-# from astroplan import download_IERS_A
-# download_IERS_A()
+from astroplan import download_IERS_A
+
 from astroplan import (PrimaryEclipseConstraint, MoonSeparationConstraint,
                        is_event_observable, is_always_observable, months_observable,
                        AtNightConstraint, AltitudeConstraint, LocalTimeConstraint,
@@ -83,11 +83,15 @@ if __name__ == '__main__':
     arg.add_argument('-p', '--plot_target', 
                      help='plot airmass and altitude of target on first observable date', 
                      action='store_true', default=False)
+    arg.add_argument('-u', '--update_db', help='update IERS database', action='store_true', default=False)
     
-    args      = arg.parse_args()
+    args      = arg.parse_args()    
     n_transits  = args.ntransit
     exclude_partial_transit = args.exclude_partial_transit
     plot_target= args.plot_target
+    
+    if args.update_db:
+        download_IERS_A()
     
     #transit params
     targetname= args.name
@@ -166,21 +170,25 @@ if __name__ == '__main__':
         #FIXME: why next_primary_ingress_egress_time does not accept obs_end?
         ing_egr_times = ephemeris.next_primary_ingress_egress_time(obs_start, 
                                                                    n_eclipses=n_transits)
-        idx = is_event_observable(constraints, 
+        idx1 = is_event_observable(constraints, 
                               observatory_site, 
                               targetloc,  
                               times_ingress_egress=ing_egr_times)[0]
+        #check if computed time does not exceed the specified obs_end
+        idx2 = [True if egr<obs_end else False for ing,egr in ing_egr_times[idx1]]
+        partial_events = ing_egr_times[idx1][idx2].iso
+        nobs = len(partial_events)
         
-        if np.any(idx):
+        if np.any(idx1):
             #in case any predicted transit is observable, 
             #take first date and compare to specified end of observation
-            ing,egr=ing_egr_times[idx][0]
+            ing,egr=ing_egr_times[idx1][0]
             if egr > obs_end:
                 print('{}: Next observable event from {} is on {}'
                       .format(targetname, sitename, time))
             else:
-                print('{}: Observable full transits from {} between {} & {}\n{}'
-                      .format(targetname, sitename, obs_time1, obs_time2, ing_egr_times[idx]))
+                print('{}: {} Observable full transits from {} between {} & {}\n{}'
+                      .format(targetname, nobs, sitename, obs_time1, obs_time2, partial_events))
         else:
             print('{}: No observable full transit from {} between {} & {}'
                   .format(targetname, sitename, obs_time1, obs_time2))
@@ -188,21 +196,27 @@ if __name__ == '__main__':
         #FIXME: why next_primary_eclipse_time does not accept obs_end?
         midtransit_times = ephemeris.next_primary_eclipse_time(obs_start, 
                                                                n_eclipses=n_transits)
-        idx = is_event_observable(constraints, 
+        idx1 = is_event_observable(constraints, 
                               observatory_site, 
                               targetloc, 
                               times=midtransit_times)[0]
-        if np.any(idx):
-            time=midtransit_times[idx][0]
-            if time > Time(obs_end):
+        #check if computed time does not exceed the specified obs_end
+        idx2 = [True if mid<obs_end else False for mid in midtransit_times[idx1]]
+        full_events = midtransit_times[idx1][idx2].iso
+        nobs = len(full_events)
+        
+        if np.any(idx1):
+            time=midtransit_times[idx1][0]
+            if time > obs_end:
                 print('{}: Next observable event from {} is on {}'
                       .format(targetname, sitename, time))
             else:
-                print('{}: Observable partial transits from {} between {} & {}\n{}'
-                      .format(targetname, sitename, obs_time1, obs_time2, midtransit_times[idx]))
+                print('{}: {} Observable partial transits from {} between {} & {}\n{}'
+                      .format(targetname, nobs, sitename, obs_time1, obs_time2, full_events))
         else:
             print('{}: No observable partial transit from {} between {} & {}'
                   .format(targetname, sitename, obs_time1, obs_time2))
+    
 #         if plot_target:
 #             plot_airmass(targetloc, 
 #                  observatory_site, 
