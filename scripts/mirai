@@ -1,0 +1,333 @@
+#!/usr/bin/env python
+r"""
+Transit and ephemeris calculator
+Note: eclipse times are computed without any barycentric corrections
+see also https://github.com/nespinoza/exotoolbox/blob/master/exotoolbox/utils.py#L779
+"""
+from os.path import join, exists
+import time
+from datetime import datetime as dt
+import argparse
+from pytz import timezone as tz
+
+# from astroquery.exoplanet_orbit_database import ExoplanetOrbitDatabase
+import numpy as np
+from astroplan import FixedTarget, Observer, EclipsingSystem
+from astroplan.plots import plot_airmass
+from astroplan import (
+    PrimaryEclipseConstraint,
+    MoonSeparationConstraint,
+    is_event_observable,
+    is_always_observable,
+    months_observable,
+    AtNightConstraint,
+    AltitudeConstraint,
+    LocalTimeConstraint,
+    AirmassConstraint,
+)
+from astropy.coordinates import SkyCoord, EarthLocation
+from astropy.time import Time, TimeDelta
+import astropy.units as u
+
+from mirai import parse_target, SITES, get_tois, get_ctois, plot_full_transit
+
+if __name__ == "__main__":
+    arg = argparse.ArgumentParser(
+        description="set-up target and observation settings"
+    )
+    help = (
+        "target name/coord e.g. EPICx/K2x or TIC/TOIx or WASP-x or Gaia DR2x\n"
+    )
+    help += "1:12:43.2, +1:12:43 (hms, dms) or 18.18, 1.21 (deg, deg)"
+    arg.add_argument("target", help=help, type=str)
+    arg.add_argument("--t0", help="transit midpoint [JD]", type=float)
+    arg.add_argument("--per", help="orbital period [d]", type=float)
+    arg.add_argument("--dur", help="transit duration [d]", type=float)
+    arg.add_argument(
+        "-n",
+        "--ntransit",
+        help="number of next primary transit to compute (default=100)",
+        type=int,
+        default=100,
+    )
+    # arg.add_argument('-e', '--exclude_partial_transit', help='exclude partial transit (default=False)',
+    #                  action='store_true', default=False)
+    # obs parameters
+    arg.add_argument(
+        "-d1",
+        "--start_date",
+        help="start date of observation [UT] e.g. 2019-02-17 (default=today)",
+        type=str,
+        default=None,
+    )
+    arg.add_argument(
+        "-t1",
+        "--start_time",
+        help="start time of observation [UT] (default=19:00)",
+        default="19:00",
+        type=str,
+    )
+    arg.add_argument(
+        "-d2",
+        "--end_date",
+        help="end date of observation [UT] e.g. (default=7 days later)",
+        type=str,
+        default=None,
+    )
+    arg.add_argument(
+        "-t2",
+        "--end_time",
+        help="end time of observation [UT] (default=06:00)",
+        default="06:00",
+        type=str,
+    )
+    arg.add_argument(
+        "-site",
+        "--obs_site_name",
+        help="observation site name (default OT)",
+        type=str,
+        default="OT",
+    )
+    arg.add_argument(
+        "-tz", "--timezone", help="time zone", type=str, default="UTC"
+    )
+    # arg.add_argument('-lt', '--use_local_timezone', help='use local time zone', action='store_true', default=False)
+    arg.add_argument(
+        "-lat",
+        "--site_lat",
+        help="custom site latitude [deg]",
+        type=float,
+        default=None,
+    )
+    arg.add_argument(
+        "-lon",
+        "--site_lon",
+        help="custom site longitude [deg]",
+        type=float,
+        default=None,
+    )
+    arg.add_argument(
+        "-elev",
+        "--site_elev",
+        help="custom site elevation [m]",
+        type=float,
+        default=None,
+    )
+    # constraints
+    arg.add_argument(
+        "-alt",
+        "--alt_limit",
+        help="target altitude limit [deg]",
+        type=float,
+        default=30,
+    )
+    arg.add_argument(
+        "-sep",
+        "--min_moon_sep",
+        help="moon separation limit [deg]",
+        type=float,
+        default=10,
+    )
+    # miscellaneous
+    arg.add_argument(
+        "-p",
+        "--plot_target",
+        help="plot airmass and altitude of target on first observable date",
+        action="store_true",
+        default=False,
+    )
+    arg.add_argument(
+        "-s",
+        "--savefig",
+        help="save visibility plots",
+        action="store_true",
+        default=False,
+    )
+    arg.add_argument(
+        "-c", "--clobber", help="clobber", action="store_true", default=False
+    )
+    arg.add_argument(
+        "-v",
+        "--verbose",
+        help="print details",
+        action="store_true",
+        default=False,
+    )
+    arg.add_argument(
+        "--show_site_names",
+        help="print accepted site_names",
+        action="store_true",
+        default=False,
+    )
+
+    args = arg.parse_args()
+    if args.show_site_names:
+        print(EarthLocation.get_site_names())
+
+    else:
+        target = args.target.lower().strip().replace("-", "")
+        target_coord = parse_target(target)
+
+        # obs params
+        if args.start_time is None:
+            obs_start = Time.now()
+        else:
+            obs_time1 = " ".join((args.start_date, args.start_time))
+            obs_start = Time(obs_time1)
+        if args.end_time is None:
+            obs_time2 = Time.now() + TimeDelta(7, format="jd")
+        else:
+            obs_time2 = " ".join((args.end_date, args.end_time))
+            obs_end = Time(obs_time2)
+
+        site_name = args.obs_site_name.upper()
+        timezone = args.timezone
+
+        # observatory site
+        if site_name is not None:
+            assert site_name in list(SITES.keys())
+            lat, lon, elev, timezone = SITES[site_name]
+        elif (
+            (lat is not None)
+            & (lon is not None)
+            & (elev is not None)
+            & (timezone is not None)
+        ):
+            lat = args.site_lat
+            lon = args.site_lon
+            elev = args.site_elev
+        else:
+            # default: Observatorio del Teide
+            lat, lon, elev, timezone = SITES["OT"]
+        obs_site = Observer(
+            latitude=lat * u.deg,
+            longitude=lon * u.deg,
+            elevation=elev * u.m,
+            name=site_name,
+            timezone=timezone,
+        )
+        if args.verbose:
+            print(
+                f"Obs. site: {obs_site.name} ({lat}d,{lon}d,{elev}m,{timezone})"
+            )
+
+        # observation constraints
+        utc_offset = tz(timezone).localize(obs_start.datetime).strftime("%z")
+        time_offset = dt.timedelta(hours=int(utc_offset[1:3]))
+
+        # 18:00 local time in UTC
+        twilight_local1 = dt.datetime.combine(
+            obs_start.datetime.date(), dt.time(18, 0)
+        )
+        twilight_utc1 = twilight_local1 - time_offset
+        min_utc = twilight_utc1.time()
+        # 7:00 local time in UTC
+        twilight_local2 = dt.datetime.combine(
+            obs_start.datetime.date(), dt.time(7, 0)
+        )
+        twilight_utc2 = twilight_local2 - time_offset
+        max_utc = twilight_utc2.time()
+
+        # see https://astroplan.readthedocs.io/en/latest/tutorials/constraints.html
+        constraints = [
+            AtNightConstraint.twilight_civil(),
+            AltitudeConstraint(min=args.alt_limit * u.deg),
+            LocalTimeConstraint(min=min_utc, max=max_utc),
+            MoonSeparationConstraint(min=args.min_moon_sep * u.deg),
+        ]
+        # set-up transit parameters
+        if (
+            (args.t0 is not None)
+            & (args.per is not None)
+            & (args.dur is not None)
+        ):
+            t0, per, dur = args.t0, args.per, args.dur
+        elif target[:3] == "toi":
+            tois = get_tois(clobber=args.clobber, verbose=False)
+            toiid = float(target[3:])
+            toi = tois[tois["TOI"].astype(float) == toiid]
+            # toi = get_toi(toiid)
+            t0 = toi["Epoch (BJD)"]
+            per = toi["Period (days)"]
+            dur = toi["Duration (hours)"] / 24
+        elif target[:4] == "ctoi":
+            ctois = get_ctois(clobber=args.clobber, verbose=False)
+            ctoiid = float(target[4:])
+            ctoi = ctois[ctois["CTOI"].astype(float) == ctoiid]
+            t0 = ctoi["Epoch (BJD)"]
+            per = ctoi["Period (days)"]
+            dur = ctoi["Duration (hours)"] / 24
+        elif target[:3] == "tic":
+            tois = get_tois(clobber=args.clobber, verbose=False)
+            ticid = int(target[3:])
+            toi = tois[tois["TIC ID"].astype(int) == ticid]
+            # toi = get_toi(toiid)
+            t0 = toi["Epoch (BJD)"]
+            per = toi["Period (days)"]
+            dur = toi["Duration (hours)"] / 24
+        else:
+            raise ValueError("Provide t0,per,dur")
+        assert per is not None
+        assert dur is not None
+        assert t0 is not None
+
+        primary_eclipse_time = Time(t0, format="jd")
+        orbital_period = args.per * u.day
+        transit_duration = args.dur * u.day
+
+        primary_eclipse_time = Time(t0, format="jd", scale="tdb")
+        system = EclipsingSystem(
+            primary_eclipse_time=primary_eclipse_time,
+            orbital_period=orbital_period,
+            duration=transit_duration,
+            name=target,
+        )
+
+        midtransit_times = system.next_primary_eclipse_time(
+            obs_start, n_eclipses=args.ntransits
+        )
+        midtransit_times = midtransit_times[midtransit_times < obs_end]
+        # is event observable during midtransit?
+        idx2 = is_event_observable(
+            constraints, obs_site, target_coord, times=midtransit_times
+        )[0]
+        midtransit_times = midtransit_times[idx2]
+        nevents_partial = sum(idx2)
+        if nevents_partial > 0:
+            # make sure mid-transit happens at night
+            assert np.all(obs_site.is_night(midtransit_times.flatten()))
+            partial = midtransit_times
+
+        # is event observable during ingres and egress?
+        ing_egr_times = system.next_primary_ingress_egress_time(
+            obs_start, n_eclipses=args.ntransits
+        )
+        ing_egr_times = ing_egr_times[ing_egr_times[:, 1] < obs_end]
+        idx3 = is_event_observable(
+            constraints,
+            obs_site,
+            target_coord,
+            times_ingress_egress=ing_egr_times,
+        )[0]
+        ing_egr_times = ing_egr_times[idx3]
+        nevents_full = sum(idx3)
+        if nevents_full > 0:
+            # make sure full transit happens at night
+            assert np.all(obs_site.is_night(ing_egr_times.flatten()))
+            print(f"{target} is fully observable {nevents_full} times")
+            full = ing_egr_times
+
+        if args.verbose:
+            print(f"Npartial, Nfull: {len(partial)}, {len(full)}")
+
+        if args.plot_target:
+            n = 0
+            fig = plot_full_transit(
+                full[n], target_coord, obs_site, name=target
+            )
+
+        if args.savefig:
+            fp = f"{target}_{obs_site.name}.png"
+            fig.savefig(fp, bbox_inches="tight")
+            if args.verbose:
+                print(f"Saved: {fp}")
