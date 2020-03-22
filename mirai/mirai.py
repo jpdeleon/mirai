@@ -22,6 +22,7 @@ __all__ = [
     "get_toi",
     "plot_full_transit",
     "plot_partial_transit",
+    "get_ephem_from_nexsci"
 ]
 
 # lat,lon, elev, local timezone
@@ -45,6 +46,18 @@ SITES = {
     ),  # South Africa astro obs
 }
 
+def get_ephem_from_nexsci(target):
+    try:
+        from astroquery.nasa_exoplanet_archive import NasaExoplanetArchive
+    except Exception:
+        raise ModuleNotFoundError
+
+    planet_properties = NasaExoplanetArchive.query_planet(target+' b', all_columns=True)
+
+    t0 = planet_properties['pl_tranmid'][0]
+    per = planet_properties['pl_orbper'].value[0] #has unit already
+    dur = planet_properties['pl_trandur'][0]
+    return (t0, per, dur)
 
 def parse_target_coord(target):
     if len(target.split(",")) == 2:
@@ -84,7 +97,6 @@ def get_tois(
     verbose=False,
     remove_FP=True,
     remove_known_planets=False,
-    add_FPP=True,
 ):
     """Download TOI list from TESS Alert/TOI Release.
 
@@ -110,19 +122,6 @@ def get_tois(
     if not exists(fp) or clobber:
         d = pd.read_csv(dl_link)  # , dtype={'RA': float, 'Dec': float})
         msg = "Downloading {}\n".format(dl_link)
-        if add_FPP:
-            fp2 = join(outdir, "Giacalone2020/tab4.txt")
-            classified = ascii.read(fp2).to_pandas()
-            fp3 = join(outdir, "Giacalone2020/tab5.txt")
-            unclassified = ascii.read(fp3).to_pandas()
-            fpp = pd.concat(
-                [
-                    classified[["TOI", "FPP-2m", "FPP-30m"]],
-                    unclassified[["TOI", "FPP"]],
-                ],
-                sort=True,
-            )
-            d = pd.merge(d, fpp, how="outer").drop_duplicates()
     else:
         d = pd.read_csv(fp).drop_duplicates()
         msg = "Loaded: {}\n".format(fp)
@@ -158,7 +157,7 @@ def get_tois(
             if idx.sum() > 0:
                 keys.append(key)
         msg += "{} planets are removed.\n".format(keys)
-    msg += "Saved: {fp}\n".format(fp)
+    msg += "Saved: {}\n".format(fp)
     if verbose:
         print(msg)
     return d.sort_values("TOI")
@@ -234,9 +233,9 @@ def get_toi(
     if isinstance(toiid, int):
         toi = float(str(toiid) + ".01")
     else:
-        planet = str(toi).split(".")[1]
+        planet = str(toiid).split(".")[1]
         assert len(planet) == 2, "use pattern: TOI.01"
-    idx = df["TOI"].isin([toi])
+    idx = df["TOI"].isin([toiid])
     q = df.loc[idx]
     assert len(q) > 0, "TOI not found!"
 
@@ -316,8 +315,6 @@ def get_coord_from_gaiaid(gaiaid):
 
 def plot_full_transit(obs_date, target_coord, obs_site, name=None, ax=None):
     """
-    name:
-    n: nth transit
     """
     if ax is None:
         fig, ax = pl.subplots(1, 1, figsize=(10, 6))
