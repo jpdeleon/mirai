@@ -27,8 +27,8 @@ from astroplan import (PrimaryEclipseConstraint, MoonSeparationConstraint,
                        AtNightConstraint, AltitudeConstraint, LocalTimeConstraint,
                        AirmassConstraint)
 
-import k2plr
-client = k2plr.API()
+#import k2plr
+#client = k2plr.API()
 
 #lat,lon, elev, local timezone
 #to see all timezones: import pytz; print(pytz.all_timezones)
