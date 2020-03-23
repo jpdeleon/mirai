@@ -5,10 +5,12 @@ Note: eclipse times are computed without any barycentric corrections
 see also https://github.com/nespinoza/exotoolbox/blob/master/exotoolbox/utils.py#L779
 """
 from os import makedirs, path
+import sys
 import time
 import datetime as dt
 import argparse
 from pytz import timezone as tz
+import traceback
 
 # from astroquery.exoplanet_orbit_database import ExoplanetOrbitDatabase
 import numpy as np
@@ -216,206 +218,220 @@ if __name__ == "__main__":
         site_name = args.obs_site_name.upper()
         timezone = args.timezone
 
-        # observatory site
-        if site_name is not None:
-            all_sites = list(SITES.keys())
-            #TODO: add LCO in sites using EarthLocation
-            assert site_name in all_sites, f"-site={all_sites}"
-            lat, lon, elev, timezone = SITES[site_name]
-        elif (
-            (lat is not None)
-            & (lon is not None)
-            & (elev is not None)
-            & (timezone is not None)
-        ):
-            lat = args.site_lat
-            lon = args.site_lon
-            elev = args.site_elev
-        else:
-            # default: Observatorio del Teide
-            lat, lon, elev, timezone = SITES["OT"]
-        obs_site = Observer(
-            latitude=lat * u.deg,
-            longitude=lon * u.deg,
-            elevation=elev * u.m,
-            name=site_name,
-            timezone=timezone,
-        )
-
-        # observation constraints
-        utc_offset = tz(timezone).localize(obs_start.datetime).strftime("%z")
-
-        if args.verbose:
-            print(
-            f"Obs. site: {obs_site.name} ({lat}d, {lon}d, {elev}m, UT{utc_offset[:3]})"
+        try:
+            # observatory site
+            if site_name is not None:
+                all_sites = list(SITES.keys())
+                #TODO: add LCO in sites using EarthLocation
+                assert site_name in all_sites, f"-site={all_sites}"
+                lat, lon, elev, timezone = SITES[site_name]
+            elif (
+                (lat is not None)
+                & (lon is not None)
+                & (elev is not None)
+                & (timezone is not None)
+            ):
+                lat = args.site_lat
+                lon = args.site_lon
+                elev = args.site_elev
+            else:
+                # default: Observatorio del Teide
+                lat, lon, elev, timezone = SITES["OT"]
+            obs_site = Observer(
+                latitude=lat * u.deg,
+                longitude=lon * u.deg,
+                elevation=elev * u.m,
+                name=site_name,
+                timezone=timezone,
             )
-        # time_offset = dt.timedelta(hours=int(utc_offset[1:3]))
-        # 18:00 local time in UTC
-        # twilight_local1 = dt.datetime.combine(
-        #     obs_start.datetime.date(), dt.time(18, 0)
-        # )
-        # twilight2_utc = twilight_local1 - time_offset
-        # twilight2_utc.time()
-        #
-        # # 7:00 local time in UTC
-        # twilight_local2 = dt.datetime.combine(
-        #     obs_start.datetime.date(), dt.time(7, 0)
-        # )
-        # twilight2_utc = twilight_local2 - time_offset
-        # twilight2_utc.time()
-        #
-        # sunset_utc = obs_site.sun_set_time(obs_end).datetime.time()
 
-        # see https://astroplan.readthedocs.io/en/latest/tutorials/constraints.html
-        constraints = [
-            AtNightConstraint.twilight_civil(), #between sunset and sunrise
-            AltitudeConstraint(min=args.alt_limit * u.deg),
-            MoonSeparationConstraint(min=args.min_moon_sep * u.deg),
-        ]
-        if (args.start_localtime is not None) | (args.end_localtime is not None):
-            #useful for selecting first half or second half nights
-            baseline = obs_end.jd-obs_start.jd
-            if baseline>31:
-                print(f"Fixing local time may be inaccurate after {baseline} days")
-            if args.start_localtime is not None:
-                hr, min = args.start_localtime.split(":")
-                min_lt = dt.time(int(hr),int(min))
+            # observation constraints
+            utc_offset = tz(timezone).localize(obs_start.datetime).strftime("%z")
+
+            if args.verbose:
+                print(f"Target: {target}")
+                print(f"Site: {obs_site.name} ({lat}d, {lon}d, {elev}m, UT{utc_offset[:3]})")
+            # time_offset = dt.timedelta(hours=int(utc_offset[1:3]))
+            # 18:00 local time in UTC
+            # twilight_local1 = dt.datetime.combine(
+            #     obs_start.datetime.date(), dt.time(18, 0)
+            # )
+            # twilight2_utc = twilight_local1 - time_offset
+            # twilight2_utc.time()
+            #
+            # # 7:00 local time in UTC
+            # twilight_local2 = dt.datetime.combine(
+            #     obs_start.datetime.date(), dt.time(7, 0)
+            # )
+            # twilight2_utc = twilight_local2 - time_offset
+            # twilight2_utc.time()
+            #
+            # sunset_utc = obs_site.sun_set_time(obs_end).datetime.time()
+
+            # see https://astroplan.readthedocs.io/en/latest/tutorials/constraints.html
+            constraints = [
+                AtNightConstraint.twilight_civil(), #between sunset and sunrise
+                AltitudeConstraint(min=args.alt_limit * u.deg),
+                MoonSeparationConstraint(min=args.min_moon_sep * u.deg),
+            ]
+            if (args.start_localtime is not None) | (args.end_localtime is not None):
+                #useful for selecting first half or second half nights
+                baseline = obs_end.jd-obs_start.jd
+                if baseline>31:
+                    print(f"Fixing local time may be inaccurate after {baseline} days")
+                if args.start_localtime is not None:
+                    hr, min = args.start_localtime.split(":")
+                    min_lt = dt.time(int(hr),int(min))
+                else:
+                    min_lt = obs_site.sun_set_time(obs_start).datetime.time()
+                if args.end_localtime is not None:
+                    hr, min = args.end_localtime.split(":")
+                    max_lt = dt.time(int(hr),int(min))
+                else:
+                    max_lt = obs_site.sun_rise_time(obs_start).datetime.time()
+                constraints.append(LocalTimeConstraint(min=min_lt, max=max_lt))
+
+            # set-up transit parameters
+            if (
+                (args.midtransit is not None)
+                & (args.period is not None)
+                & (args.duration is not None)
+            ):
+                t0, per, dur = args.midtransit, args.period, args.duration
             else:
-                min_lt = obs_site.sun_set_time(obs_start).datetime.time()
-            if args.end_localtime is not None:
-                hr, min = args.end_localtime.split(":")
-                max_lt = dt.time(int(hr),int(min))
+                t0, per, dur = get_t0_per_dur(target)
+
+            ephem_label=f"t0={t0:.4f} JD, "
+            ephem_label+=f"P={per:.4f} d, "
+            ephem_label+=f"dur={dur*24:.2f} hr"
+            if args.verbose:
+                print(ephem_label)
+
+            primary_eclipse_time = Time(t0, format="jd")
+            orbital_period = per * u.day
+            transit_duration = dur * u.day
+
+            primary_eclipse_time = Time(t0, format="jd", scale="tdb")
+            system = EclipsingSystem(
+                primary_eclipse_time=primary_eclipse_time,
+                orbital_period=orbital_period,
+                duration=transit_duration,
+                name=target,
+            )
+
+            midtransit_times = system.next_primary_eclipse_time(
+                obs_start, n_eclipses=NTRANSIT
+            )
+            midtransit_times = midtransit_times[midtransit_times < obs_end]
+            # is event observable during midtransit?
+            idx2 = is_event_observable(
+                constraints, obs_site, target_coord, times=midtransit_times
+            )[0]
+            midtransit_times = midtransit_times[idx2]
+            nevents_partial = sum(idx2)
+            if nevents_partial > 0:
+                # make sure mid-transit happens at night
+                assert np.all(obs_site.is_night(midtransit_times.flatten()))
+                partial = midtransit_times
             else:
-                max_lt = obs_site.sun_rise_time(obs_start).datetime.time()
-            constraints.append(LocalTimeConstraint(min=min_lt, max=max_lt))
+                partial = []
+            # is event observable during ingres and egress?
+            ing_egr_times = system.next_primary_ingress_egress_time(
+                obs_start, n_eclipses=NTRANSIT
+            )
+            ing_egr_times = ing_egr_times[ing_egr_times[:, 1] < obs_end]
+            idx3 = is_event_observable(
+                constraints,
+                obs_site,
+                target_coord,
+                times_ingress_egress=ing_egr_times,
+            )[0]
+            ing_egr_times = ing_egr_times[idx3]
+            nevents_full = sum(idx3)
+            if nevents_full > 0:
+                # make sure full transit happens at night
+                assert np.all(obs_site.is_night(ing_egr_times.flatten()))
+                if not args.next_transit:
+                    print(f"{target} has {nevents_full} full transits")
+                full = ing_egr_times
+            else:
+                full = []
 
-        # set-up transit parameters
-        if (
-            (args.midtransit is not None)
-            & (args.period is not None)
-            & (args.duration is not None)
-        ):
-            t0, per, dur = args.midtransit, args.period, args.duration
-        else:
-            t0, per, dur = get_t0_per_dur(target)
-
-        ephem_label=f"t0={t0:.4f} JD, "
-        ephem_label+=f"P={per:.4f} d, "
-        ephem_label+=f"dur={dur*24:.2f} hr"
-        if args.verbose:
-            print(ephem_label)
-
-        primary_eclipse_time = Time(t0, format="jd")
-        orbital_period = per * u.day
-        transit_duration = dur * u.day
-
-        primary_eclipse_time = Time(t0, format="jd", scale="tdb")
-        system = EclipsingSystem(
-            primary_eclipse_time=primary_eclipse_time,
-            orbital_period=orbital_period,
-            duration=transit_duration,
-            name=target,
-        )
-
-        midtransit_times = system.next_primary_eclipse_time(
-            obs_start, n_eclipses=NTRANSIT
-        )
-        midtransit_times = midtransit_times[midtransit_times < obs_end]
-        # is event observable during midtransit?
-        idx2 = is_event_observable(
-            constraints, obs_site, target_coord, times=midtransit_times
-        )[0]
-        midtransit_times = midtransit_times[idx2]
-        nevents_partial = sum(idx2)
-        if nevents_partial > 0:
-            # make sure mid-transit happens at night
-            assert np.all(obs_site.is_night(midtransit_times.flatten()))
-            partial = midtransit_times
-        else:
-            partial = []
-        # is event observable during ingres and egress?
-        ing_egr_times = system.next_primary_ingress_egress_time(
-            obs_start, n_eclipses=NTRANSIT
-        )
-        ing_egr_times = ing_egr_times[ing_egr_times[:, 1] < obs_end]
-        idx3 = is_event_observable(
-            constraints,
-            obs_site,
-            target_coord,
-            times_ingress_egress=ing_egr_times,
-        )[0]
-        ing_egr_times = ing_egr_times[idx3]
-        nevents_full = sum(idx3)
-        if nevents_full > 0:
-            # make sure full transit happens at night
-            assert np.all(obs_site.is_night(ing_egr_times.flatten()))
-            if not args.next_transit:
-                print(f"{target} has {nevents_full} full transits")
-            full = ing_egr_times
-        else:
-            full = []
-
-        if len(full)>0:
             d1=format_datetime(obs_start.datetime)
             d2=format_datetime(obs_end.datetime)
-            #first transit
-            ing,mid,egr = parse_ing_egr(full[0])
-            d0 = format_datetime(mid.datetime)
-            if args.next_transit:
-                print(f"Next full transit of {target} from {site_name} is on {mid.tdb.iso} UT (midpoint).")
+            if len(full)>0:
+                #first transit
+                ing,mid,egr = parse_ing_egr(full[0])
+                d0 = format_datetime(mid.datetime)
+                if args.next_transit:
+                    print(f"Next full transit of {target} from {site_name} is on {mid.tdb.iso} UT (midpoint).")
+                else:
+                    print(f"{len(full)} full transit between {d1} & {d2}.")
             else:
-                print(f"{len(full)} full transit between {d1} & {d2}.")
-        else:
-            if args.next_transit & long_search:
-                errmsg = f"{target} ra,deg=({target_coord.to_string()}) is likely not observable from {site_name}."
-            else:
-                errmsg = f"No full transit between {d1} & {d2}."
-            raise ValueError(errmsg)
+                if args.next_transit & long_search:
+                    errmsg = f"{target} ra,deg=({target_coord.to_string()}) is likely not observable from {site_name}."
+                else:
+                    errmsg = f"No full transit between {d1} & {d2}."
+                raise ValueError(errmsg)
 
-        if args.plot_target:
-            #plot only first transit
-            print('Showing the first transit')
-            ing_egr = full[0]
-            fig = plot_full_transit(
-                ing_egr, target_coord, obs_site, name=target, ephem_label=ephem_label
-            )
-            pl.show()
-
-        if args.save:
-            #save all figures
-            if not path.exists(outdir):
-                makedirs(outdir)
-
-            if args.next_transit | (len(full)==1):
-                #save only one
+            if args.plot_target:
+                #plot only first transit
+                print('Showing the first transit')
                 ing_egr = full[0]
-                fp1 = path.join(outdir,f"{target}_{obs_site.name}_{d0}.png")
                 fig = plot_full_transit(
-                    ing_egr, target_coord, obs_site, name=target
+                    ing_egr, target_coord, obs_site, name=target, ephem_label=ephem_label
                 )
-                fig.savefig(fp1, bbox_inches="tight")
+                pl.show()
+
+            if args.save:
+                #save all figures
+                if not path.exists(outdir):
+                    makedirs(outdir)
+
+                if args.next_transit | (len(full)==1):
+                    #save only one
+                    ing_egr = full[0]
+                    fp1 = path.join(outdir,f"{target}_{obs_site.name}_{d0}.png")
+                    fig = plot_full_transit(
+                        ing_egr, target_coord, obs_site, name=target
+                    )
+                    fig.savefig(fp1, bbox_inches="tight")
+                    if args.verbose:
+                        print(f"Saved: {fp1}")
+                else:
+                    if len(full)>1:
+                        #save each figure
+                        for ing_egr in full:
+                            ing,mid,egr = parse_ing_egr(ing_egr)
+                            d = format_datetime(mid.datetime)
+                            fp1 = path.join(outdir,f"{target}_{obs_site.name}_{d}.png")
+                            fig = plot_full_transit(
+                                ing_egr, target_coord, obs_site, name=target
+                            )
+                            fig.savefig(fp1, bbox_inches="tight")
+                            if args.verbose:
+                                print(f"Saved: {fp1}")
+                #save predictions to 1 csv file
+                if args.next_transit | len(full)==1:
+                    #if 1 event, use transit midpoint
+                    fp2 = path.join(outdir,f"{target}_{obs_site.name}_{d0}.csv")
+                else:
+                    #if more, use transit query dates
+                    fp2 = path.join(outdir,f"{target}_{obs_site.name}_{d1}_{d2}.csv")
+                np.savetxt(fp2, parse_ing_egr_list(full), delimiter=',', fmt='%s')
                 if args.verbose:
-                    print(f"Saved: {fp1}")
-            else:
-                if len(full)>1:
-                    #save each figure
-                    for ing_egr in full:
-                        ing,mid,egr = parse_ing_egr(ing_egr)
-                        d = format_datetime(mid.datetime)
-                        fp1 = path.join(outdir,f"{target}_{obs_site.name}_{d}.png")
-                        fig = plot_full_transit(
-                            ing_egr, target_coord, obs_site, name=target
-                        )
-                        fig.savefig(fp1, bbox_inches="tight")
-                        if args.verbose:
-                            print(f"Saved: {fp1}")
-            #save predictions to 1 csv file
-            if args.next_transit | len(full)==1:
-                #if 1 event, use transit midpoint
-                fp2 = path.join(outdir,f"{target}_{obs_site.name}_{d0}.csv")
-            else:
-                #if more, use transit query dates
-                fp2 = path.join(outdir,f"{target}_{obs_site.name}_{d1}_{d2}.csv")
-            np.savetxt(fp2, parse_ing_egr_list(full), delimiter=',', fmt='%s')
-            if args.verbose:
-                print(f"Saved: {fp2}")
+                    print(f"Saved: {fp2}")
+        except Exception:
+            # Get current system exception
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            # Extract unformatter stack traces as tuples
+            trace_back = traceback.extract_tb(ex_traceback)
+
+            print(f"Exception type: {ex_type.__name__}")
+            print(f"Exception message: {ex_value}")
+            # Format stacktrace
+            for trace in trace_back:
+                print(f"File : {trace[0]}")
+                print(f"Line : {trace[1]}")
+                print(f"Func : {trace[2]}")
+                print(f"Message : {trace[3]}\n\n")

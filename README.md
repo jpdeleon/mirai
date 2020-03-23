@@ -24,12 +24,10 @@ $ mirai tic130181866.02 -site AAO -v -n -p -s
 ```
 
 ## Issues/ TODO
-* use twilight
 * apply easy check for observability e.g. dec cut
-* use pandas
-* given tic, check toi then ctoi, else ephem
-* add airmass, etc
-* add Moon
+* add details e.g. airmass in csv
+* given tic, check toi then ctoi, else supply ephem
+* add Moon in plot
 * needs further tests (see tests/); compare with nexsci tool
 * incorporate uncertainties
 * expand lists of sites: +LCO
