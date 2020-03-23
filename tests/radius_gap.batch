@@ -1,0 +1,7 @@
+mirai TOI193.01 -v -s -o radius_gap -site TNO -s -dt2 2020-03-28 12:00
+mirai TOI431.01 -v -s -o radius_gap -site TNO -s -dt2 2020-03-28 12:00
+mirai TOI706.01 -v -s -o radius_gap -site TNO -s -dt2 2020-03-28 12:00
+mirai TOI779.01 -v -s -o radius_gap -site TNO -s -dt2 2020-03-28 12:00
+mirai TOI1055.01 -v -s -o radius_gap -site TNO -s -dt2 2020-03-28 12:00
+mirai TOI1497.01 -v -s -o radius_gap -site TNO -s -dt2 2020-03-28 12:00
+mirai TOI1504.01 -v -s -o radius_gap -site TNO -s -dt2 2020-03-28 12:00

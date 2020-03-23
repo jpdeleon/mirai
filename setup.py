@@ -10,6 +10,6 @@ setup(
     author="Jerome de Leon",
     author_email="jpdeleon@astron.s.u-tokyo.ac.jp",
     packages=["mirai"],
-    scripts=["scripts/mirai"],
+    scripts=["scripts/mirai","scripts/toi"],
     install_requires=["astropy", "astroquery", "astroplan", "pytz", "pandas"],
 )
