@@ -50,15 +50,16 @@ SITES = {
     ),  # South Africa astro obs
 }
 
-def parse_ing_egr(ing_egr):
 
+def parse_ing_egr(ing_egr):
     """get also mitransit from ing and egr"""
     errmsg = "must be a pair of astropy Time"
-    assert len(ing_egr.datetime)==2, errmsg
+    assert len(ing_egr.datetime) == 2, errmsg
     ing, egr = ing_egr
     t14 = (egr - ing).value
     mid = ing + dt.timedelta(days=t14 / 2)
-    return ing,mid,egr
+    return (ing, mid, egr)
+
 
 def parse_ing_egr_list(ing_egr_list):
     """
@@ -67,20 +68,22 @@ def parse_ing_egr_list(ing_egr_list):
     output will be saved in csv
     """
     errmsg = "must be a pair of astropy Time"
-    assert len(ing_egr_list[0])==2, errmsg
-    t12 = ['ingress']
-    tmid = ['midtransit']
-    t34 = ['egress']
-    for ing,egr in ing_egr_list:
+    assert len(ing_egr_list[0]) == 2, errmsg
+    t12 = ["ingress"]
+    tmid = ["midtransit"]
+    t34 = ["egress"]
+    for ing, egr in ing_egr_list:
         t14 = (egr - ing).value
         mid = ing + dt.timedelta(days=t14 / 2)
         t12.append(ing.tdb.iso)
         tmid.append(mid.tdb.iso)
         t34.append(egr.tdb.iso)
-    return np.c_[(t12,tmid,t34)]
+    return np.c_[(t12, tmid, t34)]
+
 
 def format_datetime(datetime, datefmt="%d%b%Y"):
     return datetime.date().strftime(datefmt)
+
 
 def get_t0_per_dur(target, **kwargs):
     if target[:3] == "toi":
@@ -96,18 +99,18 @@ def get_t0_per_dur(target, **kwargs):
         per = ctoi["Period (days)"].values[0]
         dur = ctoi["Duration (hrs)"].values[0] / 24
     elif target[:3] == "tic":
-        #get toiid from toi table
+        # get toiid from toi table
         tois = get_tois(**kwargs)
         ticid = float(target[3:])
-        if len(str(ticid).split('.'))==2:
-            #planet candidate number; .01 is index n=0
-            n=int(str(ticid).split('.')[-1])-1
+        if len(str(ticid).split(".")) == 2:
+            # planet candidate number; .01 is index n=0
+            n = int(str(ticid).split(".")[-1]) - 1
         else:
-            n=0
+            n = 0
         toi = tois[tois["TIC ID"].isin([ticid])]
-        assert n<=len(toi), "n-th planet candidate not found in TOI table"
+        assert n <= len(toi), "n-th planet candidate not found in TOI table"
         toiid = toi["TOI"].values[n]
-        if len(toi)>0:
+        if len(toi) > 0:
             print(f"TIC {ticid} == TOI {toiid}!")
             toi = get_toi(toiid, **kwargs)
             t0 = toi["Epoch (BJD)"].values[0]
@@ -115,7 +118,7 @@ def get_t0_per_dur(target, **kwargs):
             dur = toi["Duration (hours)"].values[0] / 24
         else:
             raise ValueError("Provide t0,per,dur")
-    elif target[:6]=='kepler':
+    elif target[:6] == "kepler":
         raise NotImplementedError("Provide t0,per,dur")
         # import k2plr
         # client = k2plr.API()
@@ -124,22 +127,23 @@ def get_t0_per_dur(target, **kwargs):
         # import pdb; pdb.set_trace()
         # # planet.period
 
-    elif target[:4]=='epic':
+    elif target[:4] == "epic":
         raise NotImplementedError("Provide t0,per,dur")
         # import k2plr
         # client = k2plr.API()
         # epicid = int(target[4:])
         # import pdb; pdb.set_trace()
 
-    #elif (target[:4] in ['wasp','epic','kelt']) | (target[:2]=='k2') | (target[:3]=='hat'):
+    # elif (target[:4] in ['wasp','epic','kelt']) | (target[:2]=='k2') | (target[:3]=='hat'):
     #    #TODO add more known planet names
     #    t0,per,dur = get_ephem_from_nexsci(target)
     else:
         raise ValueError("Provide t0,per,dur")
-    assert (t0 is not None) & (not np.isnan(t0)) & (t0!=0), "Error in t0"
-    assert (per is not None) & (not np.isnan(per)) & (per!=0), "Error in per"
-    assert (dur is not None) & (not np.isnan(dur)) & (dur!=0), "Error in dur"
-    return (t0,per,dur)
+    assert (t0 is not None) & (not np.isnan(t0)) & (t0 != 0), "Error in t0"
+    assert (per is not None) & (not np.isnan(per)) & (per != 0), "Error in per"
+    assert (dur is not None) & (not np.isnan(dur)) & (dur != 0), "Error in dur"
+    return (t0, per, dur)
+
 
 def get_ephem_from_nexsci(target):
     try:
@@ -147,12 +151,15 @@ def get_ephem_from_nexsci(target):
     except Exception:
         raise ModuleNotFoundError
 
-    planet_properties = NasaExoplanetArchive.query_planet(target+' b', all_columns=True)
+    planet_properties = NasaExoplanetArchive.query_planet(
+        target + " b", all_columns=True
+    )
 
-    t0 = planet_properties['pl_tranmid'][0]
-    per = planet_properties['pl_orbper'].value[0] #has unit already
-    dur = planet_properties['pl_trandur'][0]
+    t0 = planet_properties["pl_tranmid"][0]
+    per = planet_properties["pl_orbper"].value[0]  # has unit already
+    dur = planet_properties["pl_trandur"][0]
     return (t0, per, dur)
+
 
 def parse_target_coord(target):
     if len(target.split(",")) == 2:
@@ -170,9 +177,9 @@ def parse_target_coord(target):
             ctoiid = float(target[4:])
             coord = get_coord_from_ctoiid(ctoiid)
         elif target[:3] == "tic":
-            #TODO: requires int for astroquery.mast.Catalogs to work
-            if len(target[3:].split('.'))==2:
-                ticid = int(target[3:].split('.')[1])
+            # TODO: requires int for astroquery.mast.Catalogs to work
+            if len(target[3:].split(".")) == 2:
+                ticid = int(target[3:].split(".")[1])
             else:
                 ticid = int(target[3:])
             coord = get_coord_from_ticid(ticid)
@@ -305,9 +312,7 @@ def get_ctois(clobber=True, outdir=DATA_PATH, verbose=False, remove_FP=True):
     return d.sort_values("CTOI")
 
 
-def get_toi(
-    toiid, clobber=True, outdir=DATA_PATH, verbose=False
-):
+def get_toi(toiid, clobber=True, outdir=DATA_PATH, verbose=False):
     """Query TOI from TOI list
 
     Parameters
@@ -330,7 +335,7 @@ def get_toi(
     df = get_tois(clobber=clobber, verbose=verbose, outdir=outdir)
 
     if isinstance(toiid, int):
-        toi = float(str(toiid) + ".01")
+        toiid = float(str(toiid) + ".01")
     else:
         planet = str(toiid).split(".")[1]
         assert len(planet) == 2, "use pattern: TOI.01"
@@ -355,9 +360,10 @@ def get_toi(
 
     return q.sort_values(by="TOI", ascending=True)
 
+
 def get_ctoi(ctoiid, clobber=True, outdir=DATA_PATH, verbose=False):
     if isinstance(ctoiid, int):
-        toi = float(str(ctoiid) + ".01")
+        ctoiid = float(str(ctoiid) + ".01")
     else:
         planet = str(ctoiid).split(".")[1]
         assert len(planet) == 2, "use pattern: CTOI.01"
@@ -375,13 +381,14 @@ def get_ctoi(ctoiid, clobber=True, outdir=DATA_PATH, verbose=False):
             "Midpoint (BJD)",
             "Duration (hours)",
             "Depth (ppm)",
-            #"Comments",
+            # "Comments",
         ]
         print("{}\n".format(q[columns].T))
 
     if q["User Disposition"].isin(["FP"]).any():
         print("\nUser disposition is a False Positive!\n")
     return q.sort_values(by="CTOI", ascending=True)
+
 
 def get_coord_from_toiid(toiid):
     toi = get_toi(toiid)
@@ -419,6 +426,7 @@ def get_coord_from_ticid(ticid):
 def get_coord_from_epicid(epicid):
     try:
         import k2plr
+
         client = k2plr.API()
     except Exception:
         raise ModuleNotFoundError(
