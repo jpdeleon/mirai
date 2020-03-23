@@ -22,7 +22,11 @@ __all__ = [
     "get_toi",
     "plot_full_transit",
     "plot_partial_transit",
-    "get_ephem_from_nexsci"
+    "get_ephem_from_nexsci",
+    "get_t0_per_dur",
+    "format_datetime",
+    "parse_ing_egr",
+    "parse_ing_egr_list",
 ]
 
 # lat,lon, elev, local timezone
@@ -45,6 +49,97 @@ SITES = {
         "Africa/Johannesburg",
     ),  # South Africa astro obs
 }
+
+def parse_ing_egr(ing_egr):
+
+    """get also mitransit from ing and egr"""
+    errmsg = "must be a pair of astropy Time"
+    assert len(ing_egr.datetime)==2, errmsg
+    ing, egr = ing_egr
+    t14 = (egr - ing).value
+    mid = ing + dt.timedelta(days=t14 / 2)
+    return ing,mid,egr
+
+def parse_ing_egr_list(ing_egr_list):
+    """
+    TODO: make sure tdb iso is precise
+
+    output will be saved in csv
+    """
+    errmsg = "must be a pair of astropy Time"
+    assert len(ing_egr_list[0])==2, errmsg
+    t12 = ['ingress']
+    tmid = ['midtransit']
+    t34 = ['egress']
+    for ing,egr in ing_egr_list:
+        t14 = (egr - ing).value
+        mid = ing + dt.timedelta(days=t14 / 2)
+        t12.append(ing.tdb.iso)
+        tmid.append(mid.tdb.iso)
+        t34.append(egr.tdb.iso)
+    return np.c_[(t12,tmid,t34)]
+
+def format_datetime(datetime, datefmt="%d%b%Y"):
+    return datetime.date().strftime(datefmt)
+
+def get_t0_per_dur(target, **kwargs):
+    if target[:3] == "toi":
+        toiid = float(target[3:])
+        toi = get_toi(toiid, **kwargs)
+        t0 = toi["Epoch (BJD)"].values[0]
+        per = toi["Period (days)"].values[0]
+        dur = toi["Duration (hours)"].values[0] / 24
+    elif target[:4] == "ctoi":
+        ctoiid = float(target[4:])
+        ctoi = get_ctoi(ctoiid, **kwargs)
+        t0 = ctoi["Midpoint (BJD)"].values[0]
+        per = ctoi["Period (days)"].values[0]
+        dur = ctoi["Duration (hrs)"].values[0] / 24
+    elif target[:3] == "tic":
+        #get toiid from toi table
+        tois = get_tois(**kwargs)
+        ticid = float(target[3:])
+        if len(str(ticid).split('.'))==2:
+            #planet candidate number; .01 is index n=0
+            n=int(str(ticid).split('.')[-1])-1
+        else:
+            n=0
+        toi = tois[tois["TIC ID"].isin([ticid])]
+        assert n<=len(toi), "n-th planet candidate not found in TOI table"
+        toiid = toi["TOI"].values[n]
+        if len(toi)>0:
+            print(f"TIC {ticid} == TOI {toiid}!")
+            toi = get_toi(toiid, **kwargs)
+            t0 = toi["Epoch (BJD)"].values[0]
+            per = toi["Period (days)"].values[0]
+            dur = toi["Duration (hours)"].values[0] / 24
+        else:
+            raise ValueError("Provide t0,per,dur")
+    elif target[:6]=='kepler':
+        raise NotImplementedError("Provide t0,per,dur")
+        # import k2plr
+        # client = k2plr.API()
+        # kepid = int(target[6:])
+        # planet = client.planet(f"Kepler-{kepid}b")
+        # import pdb; pdb.set_trace()
+        # # planet.period
+
+    elif target[:4]=='epic':
+        raise NotImplementedError("Provide t0,per,dur")
+        # import k2plr
+        # client = k2plr.API()
+        # epicid = int(target[4:])
+        # import pdb; pdb.set_trace()
+
+    #elif (target[:4] in ['wasp','epic','kelt']) | (target[:2]=='k2') | (target[:3]=='hat'):
+    #    #TODO add more known planet names
+    #    t0,per,dur = get_ephem_from_nexsci(target)
+    else:
+        raise ValueError("Provide t0,per,dur")
+    assert (t0 is not None) & (not np.isnan(t0)) & (t0!=0), "Error in t0"
+    assert (per is not None) & (not np.isnan(per)) & (per!=0), "Error in per"
+    assert (dur is not None) & (not np.isnan(dur)) & (dur!=0), "Error in dur"
+    return (t0,per,dur)
 
 def get_ephem_from_nexsci(target):
     try:
@@ -75,14 +170,18 @@ def parse_target_coord(target):
             ctoiid = float(target[4:])
             coord = get_coord_from_ctoiid(ctoiid)
         elif target[:3] == "tic":
-            ticid = float(target[3:])
+            #TODO: requires int for astroquery.mast.Catalogs to work
+            if len(target[3:].split('.'))==2:
+                ticid = int(target[3:].split('.')[1])
+            else:
+                ticid = int(target[3:])
             coord = get_coord_from_ticid(ticid)
         elif target[:4] == "epic":
             epicid = float(target[4:])
-            coord = get_coord_from_toiid(epicid)
+            coord = get_coord_from_epicid(epicid)
         elif target[:2] == "k2":
             k2id = float(target[2:])
-            coord = SkyCoord.from_name("K2 " + str(k2id))
+            coord = SkyCoord.from_name("K2-" + str(k2id))
         elif target[:4] == "gaia":
             gaiaid = float(target[4:])
             coord = SkyCoord.from_name("Gaia DR2 " + str(gaiaid))
@@ -207,7 +306,7 @@ def get_ctois(clobber=True, outdir=DATA_PATH, verbose=False, remove_FP=True):
 
 
 def get_toi(
-    toiid, clobber=True, outdir=DATA_PATH, add_FPP=False, verbose=True
+    toiid, clobber=True, outdir=DATA_PATH, verbose=False
 ):
     """Query TOI from TOI list
 
@@ -237,7 +336,7 @@ def get_toi(
         assert len(planet) == 2, "use pattern: TOI.01"
     idx = df["TOI"].isin([toiid])
     q = df.loc[idx]
-    assert len(q) > 0, "TOI not found!"
+    assert len(q) > 0, f"TOI {toiid} not found!"
 
     q.index = q["TOI"].values
     if verbose:
@@ -256,6 +355,33 @@ def get_toi(
 
     return q.sort_values(by="TOI", ascending=True)
 
+def get_ctoi(ctoiid, clobber=True, outdir=DATA_PATH, verbose=False):
+    if isinstance(ctoiid, int):
+        toi = float(str(ctoiid) + ".01")
+    else:
+        planet = str(ctoiid).split(".")[1]
+        assert len(planet) == 2, "use pattern: CTOI.01"
+
+    df = get_ctois(clobber=clobber, verbose=verbose, outdir=outdir)
+    idx = df["CTOI"].isin([ctoiid])
+    q = df.loc[idx]
+    assert len(q) > 0, f"CTOI {ctoiid} not found!"
+
+    q.index = q["CTOI"].values
+    if verbose:
+        print("Data from CTOI Release:\n")
+        columns = [
+            "Period (days)",
+            "Midpoint (BJD)",
+            "Duration (hours)",
+            "Depth (ppm)",
+            #"Comments",
+        ]
+        print("{}\n".format(q[columns].T))
+
+    if q["User Disposition"].isin(["FP"]).any():
+        print("\nUser disposition is a False Positive!\n")
+    return q.sort_values(by="CTOI", ascending=True)
 
 def get_coord_from_toiid(toiid):
     toi = get_toi(toiid)
@@ -268,9 +394,8 @@ def get_coord_from_toiid(toiid):
     return coord
 
 
-def get_coord_from_ctoiid(ctoiid, clobber=True, verbose=True):
-    ctois = get_ctois(clobber=clobber, verbose=verbose)
-    ctoi = ctois[ctois["TIC ID"].isin([ctoiid])]
+def get_coord_from_ctoiid(ctoiid, **kwargs):
+    ctoi = get_ctoi(ctoiid, **kwargs)
     coord = SkyCoord(
         ra=ctoi["RA"].values[0],
         dec=ctoi["Dec"].values[0],
@@ -291,10 +416,9 @@ def get_coord_from_ticid(ticid):
     return coord
 
 
-def get_coord_from_epic(epicid):
+def get_coord_from_epicid(epicid):
     try:
         import k2plr
-
         client = k2plr.API()
     except Exception:
         raise ModuleNotFoundError(
@@ -347,4 +471,4 @@ def plot_full_transit(obs_date, target_coord, obs_site, name=None, ax=None):
 
 
 def plot_partial_transit():
-    NotImplementedError
+    raise NotImplementedError()
