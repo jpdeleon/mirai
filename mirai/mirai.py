@@ -61,7 +61,7 @@ def parse_ing_egr(ing_egr):
     return (ing, mid, egr)
 
 
-def parse_ing_egr_list(ing_egr_list):
+def parse_ing_egr_list(ing_egr_list, details=None):
     """
     TODO: make sure tdb iso is precise
 
@@ -445,12 +445,17 @@ def get_coord_from_gaiaid(gaiaid):
     return coord
 
 
-def plot_full_transit(obs_date, target_coord, obs_site, name=None, ax=None):
+def plot_full_transit(
+    obs_date, target_coord, obs_site, name=None, ephem_label=None
+):
     """
     """
-    if ax is None:
-        fig, ax = pl.subplots(1, 1, figsize=(10, 6))
+    fig, ax = pl.subplots(1, 1, figsize=(10, 6))
+    # plot moon
+    # mon_altitude = obs_site.moon_altaz(ing_egr).alt
+    # ax.plot(ing_egr, moon_altitude, ls='--', label='Moon')
 
+    # plot target
     ing = obs_date[0]
     egr = obs_date[1]
     t14 = (obs_date[1] - obs_date[0]).value
@@ -471,10 +476,12 @@ def plot_full_transit(obs_date, target_coord, obs_site, name=None, ax=None):
     ax.axvline(mid.datetime, 0, 1, c="k", ls="-", label="mid")
     ax.axvline(egr.datetime, 0, 1, c="k", ls="--", label="_nolegend_")
     if name is None:
-        name = "ra,dec=({})".format(target_coord.to_string())
-    ax.set_title("{} @ {}".format(name, obs_site.name))
+        name = f"ra, dec=({target_coord.to_string()})"
+
+    if ephem_label is not None:
+        name += f" @ {obs_site.name}, {ephem_label}"
+    ax.set_title(name)
     fig.tight_layout()
-    # ax.legend()
     return fig
 
 

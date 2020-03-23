@@ -7,23 +7,29 @@ transit ephemeris calculator
 ```shell
 #find next transit @ OT(default)
 $ mirai toi1497.01 -v -n
-$ mirai tic130181866.02 -site=AAO -v -n #toi1726 multi-planet
+$ mirai tic130181866.02 -site AAO -v -n #toi1726 multi-planet
 $ mirai ctoi25314899.01 -v -n #community TOI
 
 #specify ephem
-$ mirai wasp-127 -v -n -per=4.178062 -t0=2457248.74131 -dur=0.1795
+$ mirai wasp-127 -v -n -per 4.178062 -t0 2457248.74131 -dur 0.1795
 
 #change site
-$ mirai toi200.01 -site=SAAO -v -n
+$ mirai toi200.01 -site SAAO -v -n
 
 # find all transits between specified times
-$ mirai toi200.01 -site=SAAO -v -n -s -d1=2020-05-1 -d2=2020-06-1
+$ mirai toi200.01 -site SAAO -v -n -s -dt1 2020-05-1 12:00 -dt2 2020-06-1 17:00
 
 # add -p to plot and -s to save figure+csv
-$ mirai tic130181866.02 -site=AAO -v -n -p -s
+$ mirai tic130181866.02 -site AAO -v -n -p -s
 ```
 
 ## Issues/ TODO
+* use twilight
+* apply easy check for observability e.g. dec cut
+* use pandas
+* given tic, check toi then ctoi, else ephem
+* add airmass, etc
+* add Moon
 * needs further tests (see tests/); compare with nexsci tool
 * incorporate uncertainties
 * expand lists of sites: +LCO
