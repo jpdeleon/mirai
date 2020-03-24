@@ -38,10 +38,13 @@ output_colums = "TOI,Period (days),Planet Radius (R_Earth),Depth (ppm)".split(
 # fetch toi table from exofop tess
 tois = mr.get_tois(remove_FP=True, clobber=False, verbose=False)
 Rp = tois["Planet Radius (R_Earth)"]
+Rp_err = tois["Planet Radius (R_Earth) err"]
 Porb = tois["Period (days)"]
-Teq = tois["Planet Equil Temp (K)"]
+Porb_err = tois["Period (days) err"]
 Rstar = tois["Stellar Radius (R_Sun)"]
+Rstar_err = tois["Stellar Radius (R_Sun) err"]
 teff = tois["Stellar Eff Temp (K)"]
+Teq = tois["Planet Equil Temp (K)"]
 
 # ---define filters---#
 # transit
@@ -62,63 +65,84 @@ sunlike = (Rstar.round() == 1.0) & (teff > 5500) & (teff < 6000)  # +logg & feh
 nearby = tois["Stellar Distance (pc)"] < 100
 young = tois["Stellar log(g) (cm/s^2)"] > 4.5
 # planet
-hot = Teq > 1000
-temperate = (Teq > 500) & (Teq < 1000)
+temperate = (Teq > 300) & (Teq < 500)
+tropical = (Teq > 500) & (Teq < 800)
+warm = Teq > 800  # hot?
 # size
 small = Rp < 4.0
 subearth = Rp < 1.0
-earthlike = (Rp >= 1.0) & (Rp < 1.5)
-superearth = (Rp >= 1.5) & (Rp < 2.0)
-subneptune = (Rp >= 2.0) & (Rp < 4.0)
-subsaturn = (Rp > 4.0) & (Rp <= 11.0)
-large = Rp * u.Rearth.to(u.Rjup) > 1.0
+earth = (Rp >= 1.0) & (Rp < 1.5)
+superearth = (Rp > 1.5) & (Rp < 2.0)
+subneptune = (Rp > 2.0) & (Rp < 4.0)
+neptune = (Rp >= 4.0) & (Rp < 5.0)
+subsaturn = (Rp > 5.0) & (Rp < 9.0)
+saturn = (Rp >= 9.0) & (Rp < 11.0)
+jupiter = (Rp > 11.0) & (Rp > 12.0)
+inflated = (Rp > 12.0) & (Rp > 16.0)
+large = Rp > 16.0
 # orbit
 short = Porb < 3
+medium = (Porb >= 3) & (Porb <= 10)
 long = Porb > 10
-tropical = (Porb >= 5) & (Porb <= 10)
 # special
 usp = Porb <= 1
-hotjup = short & large
-radius_gap = (Rp >= 3.8) & (Rp <= 4.0)
+hotjup = short & (Rp > 11.0)
+radius_gap = (Rp >= 1.8) & (Rp <= 2.0)
+reinflated = (
+    (Rp > 11)  # See Lopez & Fortney 2015: arxiv.org/pdf/1510.00067.pdf
+    & (Porb > 10)
+    & (Porb < 20)
+    & (Rstar > 5)
+    & (Rstar < 10)
+    & (Rstar / Rstar_err < 0.1)
+)
 
 ## combine filters by uncommenting lines
 idx = (
     (Porb > 0)  # makes sure no Nan in period
     # & (Rp>0) #makes sure no Nan in radius
     # ---telescope---#
-    & north
+    # & north
     # & south
     # ---transit---#
-    & hi_snr
     & deep
+    & hi_snr
     # ---star---#
     # & nearby
     & bright
     # & cool
     # & dwarf
     # & hot
-    & giant
+    # & giant
     # & sunlike
+    # & nearby
+    # & young
     # ---planet---#
-    # & hot
     # & temperate
+    # & tropical
+    # & warm
     # & small
+    # & subearth
     # & superearth
-    # & earthlike
-    # & superearth
-    # & subneptune
-    & subsaturn
+    # & earth
+    & subneptune
+    # & neptune
+    # & subsaturn
+    # & saturn
+    # & jupiter
+    # & inflated
     # & large
     # ---orbit---#
     # & short
+    # & medium
     # & long
-    # & tropical
     # ---special---#
     & usp
     # & hotjup
     # & tropical & subneptune
     # & tropical & subsaturn
-    # & tropical & large
+    # & tropical & jupiter
+    # & reinflated
     # & radius_gap
 )
 

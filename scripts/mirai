@@ -220,8 +220,14 @@ if __name__ == "__main__":
             ntransits = 100
         elif baseline < 30 * 6:
             ntransits = 500
-        elif baseline > 30 * 6:
+        elif baseline < 30 * 12:
             ntransits = 1000
+        elif baseline < 30 * 18:
+            ntransits = 1500
+        else:
+            errmsg = "Set prediction window shorter than 1 year"
+            raise ValueError(errmsg)
+
         site_name = args.obs_site_name.upper()
         timezone = args.timezone
 

@@ -3,7 +3,14 @@ transit ephemeris calculator
 * main referece: [astroplan](https://astroplan.readthedocs.io/en/latest/tutorials/periodic.html)
 * see also: [NeXSci page](https://exoplanetarchive.ipac.caltech.edu/docs/transit_algorithms.html)
 
-## example
+## installation
+```shell
+$ git clone https://github.com/jpdeleon/mirai.git
+$ cd mirai && python setup.py install
+$ python setup.py develop
+```
+
+## examples
 ```shell
 #find next transit @ OT(default)
 $ mirai toi1497.01 -v -n
@@ -24,16 +31,15 @@ $ mirai tic130181866.02 -site AAO -v -n -p -s
 ```
 
 ## Issues/ TODO
-* apply easy check for observability e.g. dec cut
+* apply quick for observability e.g. dec cut
 * add details e.g. airmass, local time in csv
-* add Moon, local time, grid to see time gradations, and more airmass ticks in plot
-* needs further tests (see tests/); compare with nexsci tool
-* incorporate uncertainties
 * expand lists of sites: +LCO
+* add Moon, local time, grid to see time gradations, and more airmass ticks in plot
+* compare predictions against TTF or nexsci tool
+* incorporate uncertainties
 * query ephem from nexsci
 * include partial transits
-* a file with input values should be read by a function that maps transit ephemerides to a given target
-* batch script should be used to compute transit times of one object observable from several (default) observatories
+* add a function that reads an input file
 
 ## Notes on the algorithm
 * Given ticid, first mirai checks if it is a toi or ctoi, else ephemeris is asked (check `get_t0_per_dur`)
