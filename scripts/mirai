@@ -32,7 +32,8 @@ from astropy.coordinates import SkyCoord, EarthLocation
 from astropy.time import Time, TimeDelta
 import astropy.units as u
 
-from mirai import (parse_target_coord,
+from mirai import (
+    parse_target_coord,
     SITES,
     get_tois,
     get_ctois,
@@ -41,11 +42,10 @@ from mirai import (parse_target_coord,
     format_datetime,
     parse_ing_egr,
     parse_ing_egr_list,
-    get_t0_per_dur
-    )
+    get_t0_per_dur,
+)
 
-NTRANSIT=100
-DEFAULT_BASELINE = 7 #days
+DEFAULT_BASELINE = 7  # days
 
 if __name__ == "__main__":
     arg = argparse.ArgumentParser(
@@ -58,9 +58,13 @@ if __name__ == "__main__":
     arg.add_argument("target", help=help, type=str)
     # arg.add_argument("-ra", help="RA (deg)", type=str)
     # arg.add_argument("-dec", help="Dec (deg)", type=str)
-    arg.add_argument("-t0", "--midtransit", help="transit midpoint [JD]", type=float)
+    arg.add_argument(
+        "-t0", "--midtransit", help="transit midpoint [JD]", type=float
+    )
     arg.add_argument("-per", "--period", help="orbital period [d]", type=float)
-    arg.add_argument("-dur", "--duration", help="transit duration [d]", type=float)
+    arg.add_argument(
+        "-dur", "--duration", help="transit duration [d]", type=float
+    )
     arg.add_argument(
         "-n",
         "--next_transit",
@@ -180,41 +184,44 @@ if __name__ == "__main__":
         default=False,
     )
     arg.add_argument(
-        "-o", "--outdir",
-        help="output directory",
-        type=str,
-        default=None
+        "-o", "--outdir", help="output directory", type=str, default=None
     )
 
     args = arg.parse_args()
     if args.show_site_names:
-        #TODO: add this to SITES
+        # TODO: add this to SITES
         print(EarthLocation.get_site_names())
 
     else:
         target = args.target.lower().strip().replace("-", "")
         target_coord = parse_target_coord(target)
-        #use target name as name of output directory
+        # use target name as name of output directory
         outdir = args.outdir if args.outdir is not None else target
 
         # obs params
         if args.start_datetime is None:
             obs_start = Time.now()
         else:
-            obs_start = Time(' '.join(args.start_datetime))
+            obs_start = Time(" ".join(args.start_datetime))
         if args.end_datetime is None:
             if args.next_transit:
-                #next transit 2 years from obs_start
-                obs_end = obs_start + TimeDelta(365*2, format="jd")
+                # next transit 2 years from obs_start
+                obs_end = obs_start + TimeDelta(365, format="jd")
                 long_search = True
             else:
-                #1 month
+                # 1 month
                 obs_end = obs_start + TimeDelta(DEFAULT_BASELINE, format="jd")
                 long_search = False
         else:
-            obs_end = Time(' '.join(args.end_datetime))
+            obs_end = Time(" ".join(args.end_datetime))
             long_search = False
-
+        baseline = obs_end.jd - obs_start.jd
+        if baseline < 30:
+            ntransits = 100
+        elif baseline < 30 * 6:
+            ntransits = 500
+        elif baseline > 30 * 6:
+            ntransits = 1000
         site_name = args.obs_site_name.upper()
         timezone = args.timezone
 
@@ -222,7 +229,7 @@ if __name__ == "__main__":
             # observatory site
             if site_name is not None:
                 all_sites = list(SITES.keys())
-                #TODO: add LCO in sites using EarthLocation
+                # TODO: add LCO in sites using EarthLocation
                 assert site_name in all_sites, f"-site={all_sites}"
                 lat, lon, elev, timezone = SITES[site_name]
             elif (
@@ -246,48 +253,42 @@ if __name__ == "__main__":
             )
 
             # observation constraints
-            utc_offset = tz(timezone).localize(obs_start.datetime).strftime("%z")
+            utc_offset = (
+                tz(timezone).localize(obs_start.datetime).strftime("%z")
+            )
 
             if args.verbose:
-                print(f"Target: {target}")
-                print(f"Site: {obs_site.name} ({lat}d, {lon}d, {elev}m, UT{utc_offset[:3]})")
-            # time_offset = dt.timedelta(hours=int(utc_offset[1:3]))
-            # 18:00 local time in UTC
-            # twilight_local1 = dt.datetime.combine(
-            #     obs_start.datetime.date(), dt.time(18, 0)
-            # )
-            # twilight2_utc = twilight_local1 - time_offset
-            # twilight2_utc.time()
-            #
-            # # 7:00 local time in UTC
-            # twilight_local2 = dt.datetime.combine(
-            #     obs_start.datetime.date(), dt.time(7, 0)
-            # )
-            # twilight2_utc = twilight_local2 - time_offset
-            # twilight2_utc.time()
-            #
-            # sunset_utc = obs_site.sun_set_time(obs_end).datetime.time()
+                print(
+                    f"Target: {target} | ra, dec=({target_coord.to_string()})"
+                )
+                print(
+                    f"Site: {obs_site.name} ({lat}d, {lon}d, {elev}m, UT{utc_offset[:3]})"
+                )
 
             # see https://astroplan.readthedocs.io/en/latest/tutorials/constraints.html
             constraints = [
-                AtNightConstraint.twilight_civil(), #between sunset and sunrise
+                AtNightConstraint.twilight_civil(),  # between sunset and sunrise
                 AltitudeConstraint(min=args.alt_limit * u.deg),
                 MoonSeparationConstraint(min=args.min_moon_sep * u.deg),
             ]
-            if (args.start_localtime is not None) | (args.end_localtime is not None):
-                #useful for selecting first half or second half nights
-                baseline = obs_end.jd-obs_start.jd
-                if baseline>31:
-                    print(f"Fixing local time may be inaccurate after {baseline} days")
+            if (args.start_localtime is not None) | (
+                args.end_localtime is not None
+            ):
+                # useful for selecting first half or second half nights
+                if baseline > 31:
+                    print(
+                        f"Fixing local time may be inaccurate after {baseline} days"
+                    )
                 if args.start_localtime is not None:
                     hr, min = args.start_localtime.split(":")
-                    min_lt = dt.time(int(hr),int(min))
+                    min_lt = dt.time(int(hr), int(min))
                 else:
                     min_lt = obs_site.sun_set_time(obs_start).datetime.time()
                 if args.end_localtime is not None:
                     hr, min = args.end_localtime.split(":")
-                    max_lt = dt.time(int(hr),int(min))
+                    max_lt = dt.time(int(hr), int(min))
                 else:
+                    # TODO: is sun_rise_time on obs_start accurate?
                     max_lt = obs_site.sun_rise_time(obs_start).datetime.time()
                 constraints.append(LocalTimeConstraint(min=min_lt, max=max_lt))
 
@@ -301,9 +302,9 @@ if __name__ == "__main__":
             else:
                 t0, per, dur = get_t0_per_dur(target)
 
-            ephem_label=f"t0={t0:.4f} JD, "
-            ephem_label+=f"P={per:.4f} d, "
-            ephem_label+=f"dur={dur*24:.2f} hr"
+            ephem_label = f"t0={t0:.4f} JD, "
+            ephem_label += f"P={per:.4f} d, "
+            ephem_label += f"dur={dur*24:.2f} hr\n"
             if args.verbose:
                 print(ephem_label)
 
@@ -320,8 +321,12 @@ if __name__ == "__main__":
             )
 
             midtransit_times = system.next_primary_eclipse_time(
-                obs_start, n_eclipses=NTRANSIT
+                obs_start,
+                n_eclipses=ntransits,  # TODO 100 if args.next_transit else ntransits
             )
+            transits_after_obs_end = sum(midtransit_times > obs_end)
+            assert transits_after_obs_end > 5, "set -dt2 longer"  # arbitrary
+            # assert transits_after_obs_end < 100, "set -dt2 shorter" #TODO: use for optimization
             midtransit_times = midtransit_times[midtransit_times < obs_end]
             # is event observable during midtransit?
             idx2 = is_event_observable(
@@ -337,7 +342,7 @@ if __name__ == "__main__":
                 partial = []
             # is event observable during ingres and egress?
             ing_egr_times = system.next_primary_ingress_egress_time(
-                obs_start, n_eclipses=NTRANSIT
+                obs_start, n_eclipses=ntransits
             )
             ing_egr_times = ing_egr_times[ing_egr_times[:, 1] < obs_end]
             idx3 = is_event_observable(
@@ -357,41 +362,49 @@ if __name__ == "__main__":
             else:
                 full = []
 
-            d1=format_datetime(obs_start.datetime)
-            d2=format_datetime(obs_end.datetime)
-            if len(full)>0:
-                #first transit
-                ing,mid,egr = parse_ing_egr(full[0])
+            d1 = format_datetime(obs_start.datetime)
+            d2 = format_datetime(obs_end.datetime)
+            if len(full) > 0:
+                # first transit
+                ing, mid, egr = parse_ing_egr(full[0])
                 d0 = format_datetime(mid.datetime)
                 if args.next_transit:
-                    print(f"Next full transit of {target} from {site_name} is on {mid.tdb.iso} UT (midpoint).")
+                    print(
+                        f"Next full transit of {target} from {site_name} is on {mid.tdb.iso} UT (midpoint)."
+                    )
                 else:
                     print(f"{len(full)} full transit between {d1} & {d2}.")
             else:
                 if args.next_transit & long_search:
                     errmsg = f"{target} ra,deg=({target_coord.to_string()}) is likely not observable from {site_name}."
                 else:
-                    errmsg = f"No full transit between {d1} & {d2}."
+                    errmsg = f"No full transit between {d1} & {d2} UT."
                 raise ValueError(errmsg)
 
             if args.plot_target:
-                #plot only first transit
-                print('Showing the first transit')
+                # plot only first transit
+                print("Showing the first transit")
                 ing_egr = full[0]
                 fig = plot_full_transit(
-                    ing_egr, target_coord, obs_site, name=target, ephem_label=ephem_label
+                    ing_egr,
+                    target_coord,
+                    obs_site,
+                    name=target,
+                    ephem_label=ephem_label,
                 )
                 pl.show()
 
             if args.save:
-                #save all figures
+                # save all figures
                 if not path.exists(outdir):
                     makedirs(outdir)
 
-                if args.next_transit | (len(full)==1):
-                    #save only one
+                if args.next_transit | (len(full) == 1):
+                    # save only one
                     ing_egr = full[0]
-                    fp1 = path.join(outdir,f"{target}_{obs_site.name}_{d0}.png")
+                    fp1 = path.join(
+                        outdir, f"{target}_{obs_site.name}_{d0}.png"
+                    )
                     fig = plot_full_transit(
                         ing_egr, target_coord, obs_site, name=target
                     )
@@ -399,26 +412,34 @@ if __name__ == "__main__":
                     if args.verbose:
                         print(f"Saved: {fp1}")
                 else:
-                    if len(full)>1:
-                        #save each figure
+                    if len(full) > 1:
+                        # save each figure
                         for ing_egr in full:
-                            ing,mid,egr = parse_ing_egr(ing_egr)
+                            ing, mid, egr = parse_ing_egr(ing_egr)
                             d = format_datetime(mid.datetime)
-                            fp1 = path.join(outdir,f"{target}_{obs_site.name}_{d}.png")
+                            fp1 = path.join(
+                                outdir, f"{target}_{obs_site.name}_{d}.png"
+                            )
                             fig = plot_full_transit(
                                 ing_egr, target_coord, obs_site, name=target
                             )
                             fig.savefig(fp1, bbox_inches="tight")
                             if args.verbose:
                                 print(f"Saved: {fp1}")
-                #save predictions to 1 csv file
-                if args.next_transit | len(full)==1:
-                    #if 1 event, use transit midpoint
-                    fp2 = path.join(outdir,f"{target}_{obs_site.name}_{d0}.csv")
+                # save predictions to 1 csv file
+                if args.next_transit | len(full) == 1:
+                    # if 1 event, use transit midpoint
+                    fp2 = path.join(
+                        outdir, f"{target}_{obs_site.name}_{d0}.csv"
+                    )
                 else:
-                    #if more, use transit query dates
-                    fp2 = path.join(outdir,f"{target}_{obs_site.name}_{d1}_{d2}.csv")
-                np.savetxt(fp2, parse_ing_egr_list(full), delimiter=',', fmt='%s')
+                    # if more, use transit query dates
+                    fp2 = path.join(
+                        outdir, f"{target}_{obs_site.name}_{d1}_{d2}.csv"
+                    )
+                np.savetxt(
+                    fp2, parse_ing_egr_list(full), delimiter=",", fmt="%s"
+                )
                 if args.verbose:
                     print(f"Saved: {fp2}")
         except Exception:

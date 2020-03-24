@@ -99,27 +99,47 @@ def get_t0_per_dur(target, **kwargs):
         per = ctoi["Period (days)"].values[0]
         dur = ctoi["Duration (hrs)"].values[0] / 24
     elif target[:3] == "tic":
+        """check TIC if TOI or CTOI else ask ephem"""
         # get toiid from toi table
         tois = get_tois(**kwargs)
-        ticid = float(target[3:])
-        if len(str(ticid).split(".")) == 2:
-            # planet candidate number; .01 is index n=0
-            n = int(str(ticid).split(".")[-1]) - 1
+        if len(str(target[3:]).split(".")) == 2:
+            # e.g. TICxxxxxx.02
+            # if candidate number is .02, its index n=int(.02)-1 = 1
+            n = int(str(target[3:]).split(".")[-1]) - 1
         else:
+            # e.g. TICxxxxxx or TICxxxxxx.01
+            # default n=0 for first candidate
             n = 0
+        ticid = int(target[3:].split(".")[0])
         toi = tois[tois["TIC ID"].isin([ticid])]
         assert n <= len(toi), "n-th planet candidate not found in TOI table"
-        toiid = toi["TOI"].values[n]
         if len(toi) > 0:
+            print("Using ephemeris from TOI")
+            toiid = toi["TOI"].values[n]
             print(f"TIC {ticid} == TOI {toiid}!")
             toi = get_toi(toiid, **kwargs)
             t0 = toi["Epoch (BJD)"].values[0]
             per = toi["Period (days)"].values[0]
             dur = toi["Duration (hours)"].values[0] / 24
         else:
-            raise ValueError("Provide t0,per,dur")
+            # check CTOI
+            ctois = get_ctois(**kwargs)
+            ctoi = ctois[ctois["TIC ID"].isin([ticid])]
+            if len(ctoi) > 0:
+                print("Using ephemeris from TOI")
+                ctoiid = int(ctoi["CTOI"].values[0])
+                ctoi = get_ctoi(ctoiid, **kwargs)
+                t0 = ctoi["Midpoint (BJD)"].values[0]
+                per = ctoi["Period (days)"].values[0]
+                dur = ctoi["Duration (hrs)"].values[0] / 24
+                print(
+                    f"TIC {ticid} is CTOI {ctoiid} with {len(ctoi)} candidates!"
+                )
+            else:
+                raise ValueError("Provide t0,per,dur")
     elif target[:6] == "kepler":
         raise NotImplementedError("Provide t0,per,dur")
+        # print('Using ephemeris from NExSci')
         # import k2plr
         # client = k2plr.API()
         # kepid = int(target[6:])
@@ -129,12 +149,14 @@ def get_t0_per_dur(target, **kwargs):
 
     elif target[:4] == "epic":
         raise NotImplementedError("Provide t0,per,dur")
+        # print('Using ephemeris from NExSci')
         # import k2plr
         # client = k2plr.API()
         # epicid = int(target[4:])
         # import pdb; pdb.set_trace()
 
     # elif (target[:4] in ['wasp','epic','kelt']) | (target[:2]=='k2') | (target[:3]=='hat'):
+    # print('Using ephemeris from NExSci')
     #    #TODO add more known planet names
     #    t0,per,dur = get_ephem_from_nexsci(target)
     else:

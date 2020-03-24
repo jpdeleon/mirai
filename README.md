@@ -25,9 +25,8 @@ $ mirai tic130181866.02 -site AAO -v -n -p -s
 
 ## Issues/ TODO
 * apply easy check for observability e.g. dec cut
-* add details e.g. airmass in csv
-* given tic, check toi then ctoi, else supply ephem
-* add Moon in plot
+* add details e.g. airmass, local time in csv
+* add Moon, local time, grid to see time gradations, and more airmass ticks in plot
 * needs further tests (see tests/); compare with nexsci tool
 * incorporate uncertainties
 * expand lists of sites: +LCO
@@ -37,5 +36,6 @@ $ mirai tic130181866.02 -site AAO -v -n -p -s
 * batch script should be used to compute transit times of one object observable from several (default) observatories
 
 ## Notes on the algorithm
-* `next_primary_eclipse_time` method of `EclipsingSystem` class is used to compute the number of transit after a given epoch of periastron passage, where `n_eclipses`=100 by default. `n_eclipses` can be erroneously set to a small number which does not reach the specified `obs_end` e.g. computing 100 eclipses may not be enough if the specified end date is say longer than 1 year from specified epoch. Perhaps, `n_eclipses` should be increased when specified end date is longer than a few months from the given epoch.
+* Given ticid, first mirai checks if it is a toi or ctoi, else ephemeris is asked (check `get_t0_per_dur`)
+* `EclipsingSystem.next_primary_eclipse_time` is used to compute the number of transit with `n_eclipses`=100 by default. `n_eclipses` can be erroneously set to a small number which does not reach the specified `obs_end` e.g. computing 100 eclipses may not be enough if the specified end date is say longer than 1 year from specified epoch. Perhaps, `n_eclipses` should be increased when specified end date is longer than a few months from the given epoch.
 * `obs_end` argument is used to compare if the first observable primary transit happens before this date and discards all observable events after this date
