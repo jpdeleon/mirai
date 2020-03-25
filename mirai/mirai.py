@@ -4,6 +4,7 @@ from os.path import join, exists
 import datetime as dt
 
 import numpy as np
+from scipy.stats import norm
 import matplotlib.pyplot as pl
 import pandas as pd
 from astroquery.mast import Catalogs
@@ -27,6 +28,9 @@ __all__ = [
     "format_datetime",
     "parse_ing_egr",
     "parse_ing_egr_list",
+    "get_below_upper_limit",
+    "get_above_lower_limit",
+    "get_between_limits",
 ]
 
 # lat,lon, elev, local timezone
@@ -503,9 +507,37 @@ def plot_full_transit(
     if ephem_label is not None:
         name += f" @ {obs_site.name}, {ephem_label}"
     ax.set_title(name)
+
+    sunset = obs_site.sun_set_time(ing)
+    sunrise = obs_site.sun_rise_time(egr)
+    ax.set_xlim(sunset.datetime, sunrise.datetime)
     fig.tight_layout()
     return fig
 
 
 def plot_partial_transit():
     raise NotImplementedError()
+
+def get_below_upper_limit(upper, data_mu, data_sig, sigma=1):
+    idx = (
+            norm.cdf(upper, loc=data_mu, scale=data_sig) <
+            norm.cdf(sigma)
+            )
+    return idx
+
+def get_above_lower_limit(lower, data_mu, data_sig, sigma=1):
+    idx = (
+            norm.cdf(lower, loc=data_mu, scale=data_sig) >
+            norm.cdf(-sigma)
+            )
+    return idx
+
+def get_between_limits(lower, upper, data_mu, data_sig, sigma=1):
+    """
+    filter data within limits lower and upper limits
+    """
+    idx =  (
+            get_above_lower_limit(lower, data_mu, data_sig, sigma=sigma) &
+            get_below_upper_limit(upper, data_mu, data_sig, sigma=sigma)
+            )
+    return idx

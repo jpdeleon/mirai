@@ -45,7 +45,8 @@ from mirai import (
     get_t0_per_dur,
 )
 
-DEFAULT_BASELINE = 7  # days
+DEFAULT_BASELINE = 7  # days; when -dt1 is given but -dt2 is not
+NEXT_TRANSIT_BASELINE = 1000  # days; when -n is used
 
 if __name__ == "__main__":
     arg = argparse.ArgumentParser(
@@ -56,8 +57,6 @@ if __name__ == "__main__":
     )
     help += "or 1:12:43.2, +1:12:43 (hms, dms) or 18.18, 1.21 (deg, deg)"
     arg.add_argument("target", help=help, type=str)
-    # arg.add_argument("-ra", help="RA (deg)", type=str)
-    # arg.add_argument("-dec", help="Dec (deg)", type=str)
     arg.add_argument(
         "-t0", "--midtransit", help="transit midpoint [JD]", type=float
     )
@@ -72,7 +71,7 @@ if __name__ == "__main__":
         action="store_true",
         default=False,
     )
-    # arg.add_argument('-e', '--exclude_partial_transit', help='exclude partial transit (default=False)',
+    # arg.add_argument('-i', '--include_partial_transit', help='include partial transit (default=False)',
     #                  action='store_true', default=False)
     # obs parameters
     arg.add_argument(
@@ -206,27 +205,15 @@ if __name__ == "__main__":
         if args.end_datetime is None:
             if args.next_transit:
                 # next transit 2 years from obs_start
-                obs_end = obs_start + TimeDelta(365, format="jd")
-                long_search = True
+                obs_end = obs_start + TimeDelta(
+                    NEXT_TRANSIT_BASELINE, format="jd"
+                )
             else:
                 # 1 month
                 obs_end = obs_start + TimeDelta(DEFAULT_BASELINE, format="jd")
-                long_search = False
         else:
             obs_end = Time(" ".join(args.end_datetime))
-            long_search = False
         baseline = obs_end.jd - obs_start.jd
-        if baseline < 30:
-            ntransits = 100
-        elif baseline < 30 * 6:
-            ntransits = 500
-        elif baseline < 30 * 12:
-            ntransits = 1000
-        elif baseline < 30 * 18:
-            ntransits = 1500
-        else:
-            errmsg = "Set prediction window shorter than 1 year"
-            raise ValueError(errmsg)
 
         site_name = args.obs_site_name.upper()
         timezone = args.timezone
@@ -258,6 +245,24 @@ if __name__ == "__main__":
                 timezone=timezone,
             )
 
+            d1 = format_datetime(obs_start.datetime)
+            d2 = format_datetime(obs_end.datetime)
+
+            # check if target is visible each midnight from obs site
+            # TODO: very slow for long baseline!
+            if not args.next_transit:
+                midnights = []
+                for n in range(int(baseline)):
+                    # get midnight times each day between obs_start and obs_end
+                    night = obs_start + n * u.day
+                    midnight = obs_site.sun_set_time(night) + 5 * u.hour
+                    midnights.append(midnight)
+                visibility = obs_site.target_is_up(midnights, target_coord)
+                if sum(visibility) == 0:
+                    raise ValueError(
+                        f"{target} is not visible from {obs_site.name} between {d1} and {d2}"
+                    )
+
             # observation constraints
             utc_offset = (
                 tz(timezone).localize(obs_start.datetime).strftime("%z")
@@ -281,7 +286,7 @@ if __name__ == "__main__":
                 args.end_localtime is not None
             ):
                 # useful for selecting first half or second half nights
-                if baseline > 31:
+                if (baseline > 31) & (baseline < NEXT_TRANSIT_BASELINE):
                     print(
                         f"Fixing local time may be inaccurate after {baseline} days"
                     )
@@ -308,6 +313,9 @@ if __name__ == "__main__":
             else:
                 t0, per, dur = get_t0_per_dur(target)
 
+            # more transits are computed for shorter periods
+            NTRANSIT_PER_DAY = 1 / per * 1.5 if per < 1 else 1.5
+
             ephem_label = f"t0={t0:.4f} JD, "
             ephem_label += f"P={per:.4f} d, "
             ephem_label += f"dur={dur*24:.2f} hr\n"
@@ -328,11 +336,13 @@ if __name__ == "__main__":
 
             midtransit_times = system.next_primary_eclipse_time(
                 obs_start,
-                n_eclipses=ntransits,  # TODO 100 if args.next_transit else ntransits
+                n_eclipses=baseline
+                * NTRANSIT_PER_DAY,  # TODO 100 if args.next_transit else ntransits
             )
             transits_after_obs_end = sum(midtransit_times > obs_end)
-            assert transits_after_obs_end > 5, "set -dt2 longer"  # arbitrary
-            # assert transits_after_obs_end < 100, "set -dt2 shorter" #TODO: use for optimization
+            assert (
+                transits_after_obs_end >= 1
+            ), f"increase NTRANSIT_PER_DAY in code"
             midtransit_times = midtransit_times[midtransit_times < obs_end]
             # is event observable during midtransit?
             idx2 = is_event_observable(
@@ -346,9 +356,9 @@ if __name__ == "__main__":
                 partial = midtransit_times
             else:
                 partial = []
-            # is event observable during ingres and egress?
+            # is event observable during ingress and egress?
             ing_egr_times = system.next_primary_ingress_egress_time(
-                obs_start, n_eclipses=ntransits
+                obs_start, n_eclipses=baseline * NTRANSIT_PER_DAY
             )
             ing_egr_times = ing_egr_times[ing_egr_times[:, 1] < obs_end]
             idx3 = is_event_observable(
@@ -362,14 +372,10 @@ if __name__ == "__main__":
             if nevents_full > 0:
                 # make sure full transit happens at night
                 assert np.all(obs_site.is_night(ing_egr_times.flatten()))
-                if not args.next_transit:
-                    print(f"{target} has {nevents_full} full transits")
                 full = ing_egr_times
             else:
                 full = []
 
-            d1 = format_datetime(obs_start.datetime)
-            d2 = format_datetime(obs_end.datetime)
             if len(full) > 0:
                 # first transit
                 ing, mid, egr = parse_ing_egr(full[0])
@@ -379,12 +385,12 @@ if __name__ == "__main__":
                         f"Next full transit of {target} from {site_name} is on {mid.tdb.iso} UT (midpoint)."
                     )
                 else:
-                    print(f"{len(full)} full transit between {d1} & {d2}.")
+                    print(f"{len(full)} full transits between {d1} & {d2}.")
             else:
-                if args.next_transit & long_search:
-                    errmsg = f"{target} ra,deg=({target_coord.to_string()}) is likely not observable from {site_name}."
+                if len(partial) > 0:
+                    errmsg = f"No full transit, only {len(partial)} partials between {d1} & {d2} UT."
                 else:
-                    errmsg = f"No full transit between {d1} & {d2} UT."
+                    errmsg = f"{target} ra,deg=({target_coord.to_string()}) is likely not observable from {site_name}."
                 raise ValueError(errmsg)
 
             if args.plot_target:
@@ -412,7 +418,11 @@ if __name__ == "__main__":
                         outdir, f"{target}_{obs_site.name}_{d0}.png"
                     )
                     fig = plot_full_transit(
-                        ing_egr, target_coord, obs_site, name=target
+                        ing_egr,
+                        target_coord,
+                        obs_site,
+                        name=target,
+                        ephem_label=ephem_label,
                     )
                     fig.savefig(fp1, bbox_inches="tight")
                     if args.verbose:
@@ -427,7 +437,11 @@ if __name__ == "__main__":
                                 outdir, f"{target}_{obs_site.name}_{d}.png"
                             )
                             fig = plot_full_transit(
-                                ing_egr, target_coord, obs_site, name=target
+                                ing_egr,
+                                target_coord,
+                                obs_site,
+                                name=target,
+                                ephem_label=ephem_label,
                             )
                             fig.savefig(fp1, bbox_inches="tight")
                             if args.verbose:
@@ -454,11 +468,10 @@ if __name__ == "__main__":
             # Extract unformatter stack traces as tuples
             trace_back = traceback.extract_tb(ex_traceback)
 
-            print(f"Exception type: {ex_type.__name__}")
-            print(f"Exception message: {ex_value}")
+            # print(f"Exception type: {ex_type.__name__}")
+            print(f"Error message: {ex_value}")
             # Format stacktrace
             for trace in trace_back:
-                print(f"File : {trace[0]}")
-                print(f"Line : {trace[1]}")
-                print(f"Func : {trace[2]}")
-                print(f"Message : {trace[3]}\n\n")
+                print(f"File: {trace[0]} (Line: {trace[1]})")
+                # print(f"Func : {trace[2]}")
+                # print(f"Message : {trace[3]}\n\n")

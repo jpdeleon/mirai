@@ -9,14 +9,13 @@ Source:
 from os import path
 import argparse
 
-# import numpy as np
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 import pandas as pd
 
 pd.options.display.float_format = "{:.2f}".format
 
-from mirai import mirai as mr
+from mirai.mirai import get_tois, get_between_limits, get_above_lower_limit, get_below_upper_limit
 
 arg = argparse.ArgumentParser()
 arg.add_argument(
@@ -29,72 +28,88 @@ arg.add_argument(
     action="store_true",
     default=False,
 )
+arg.add_argument(
+    "-sig",
+    "--sigma",
+    help="lower & upper limits",
+    default=1,
+)
 args = arg.parse_args()
 
-output_colums = "TOI,Period (days),Planet Radius (R_Earth),Depth (ppm)".split(
+output_colums = "TOI,Planet Radius (R_Earth),Planet Radius (R_Earth) err".split(
     ","
 )
+sigma = args.sigma
 
 # fetch toi table from exofop tess
-tois = mr.get_tois(remove_FP=True, clobber=False, verbose=False)
+tois = get_tois(remove_FP=True, clobber=False, verbose=False)
+tois = tois.drop_duplicates(subset=['Planet Radius (R_Earth)', 'Planet Radius (R_Earth) err'], keep='first')
 Rp = tois["Planet Radius (R_Earth)"]
 Rp_err = tois["Planet Radius (R_Earth) err"]
 Porb = tois["Period (days)"]
 Porb_err = tois["Period (days) err"]
 Rstar = tois["Stellar Radius (R_Sun)"]
 Rstar_err = tois["Stellar Radius (R_Sun) err"]
-teff = tois["Stellar Eff Temp (K)"]
+Teff = tois["Stellar Eff Temp (K)"]
+Teff_err = tois["Stellar Eff Temp (K) err"]
 Teq = tois["Planet Equil Temp (K)"]
+depth = tois["Depth (mmag)"]
+depth_err = tois["Depth (mmag) err"]
+Tmag = tois["TESS Mag"]
+Tmag_err = tois["TESS Mag"]
+distance = tois["Stellar Distance (pc)"]
+distance_err = tois["Stellar Distance (pc) err"]
 
 # ---define filters---#
 # transit
-deep = tois["Depth (ppm)"] > 1000  # 1ppt
-hi_snr = tois["Planet SNR"] > 10
+deep =  get_above_lower_limit(5, depth, depth_err, sigma=sigma)  # 1ppt
+hi_snr = get_above_lower_limit(10, tois["Planet SNR"], 1, sigma=sigma)
 # multisector = tois['Sectors'].apply(lambda x: True if len(x.split(',')) > 1 else False)
 # site-specific
 coord = SkyCoord(ra=tois["RA"], dec=tois["Dec"], unit=("hourangle", "deg"))
-north = coord.dec.deg > 20
-south = coord.dec.deg < -20
+north = coord.dec.deg > -20
+south = coord.dec.deg < 20
 # star
-bright = tois["TESS Mag"] < 10
-cool = teff < 3500
-hot = teff > 6500
-dwarf = Rstar < 0.6
-giant = Rstar > 1.6
-sunlike = (Rstar.round() == 1.0) & (teff > 5500) & (teff < 6000)  # +logg & feh
-nearby = tois["Stellar Distance (pc)"] < 100
-young = tois["Stellar log(g) (cm/s^2)"] > 4.5
+bright = get_below_upper_limit(11, Tmag, Tmag_err, sigma=sigma)
+cool =  get_below_upper_limit(3500, Teff, Teff_err, sigma=sigma)
+hot = get_above_lower_limit(6500, Teff, Teff_err, sigma=sigma)
+dwarf = get_below_upper_limit(0.6, Rstar, Rstar_err, sigma=sigma)
+giant = get_above_lower_limit(1.6, Rstar, Rstar_err, sigma=sigma)
+sunlike = (
+        get_between_limits(0.9, 1.1, Rstar, Rstar_err, sigma=sigma) &
+        get_between_limits(5500, 6000, Teff, Teff_err, sigma=sigma)
+        )
+nearby = get_below_upper_limit(300, distance, distance_err, sigma=sigma)
+# young = tois["Stellar log(g) (cm/s^2)"] > 4.5
 # planet
-temperate = (Teq > 300) & (Teq < 500)
-tropical = (Teq > 500) & (Teq < 800)
-warm = Teq > 800  # hot?
+temperate = get_between_limits(300, 500, Teff, Teff_err, sigma=sigma)
+tropical = get_between_limits(500, 800, Teff, Teff_err, sigma=sigma)
+warm = get_above_lower_limit(800, Teff, Teff_err, sigma=sigma)  # hot?
 # size
-small = Rp < 4.0
-subearth = Rp < 1.0
-earth = (Rp >= 1.0) & (Rp < 1.5)
-superearth = (Rp > 1.5) & (Rp < 2.0)
-subneptune = (Rp > 2.0) & (Rp < 4.0)
-neptune = (Rp >= 4.0) & (Rp < 5.0)
-subsaturn = (Rp > 5.0) & (Rp < 9.0)
-saturn = (Rp >= 9.0) & (Rp < 11.0)
-jupiter = (Rp > 11.0) & (Rp > 12.0)
-inflated = (Rp > 12.0) & (Rp > 16.0)
-large = Rp > 16.0
+small = get_below_upper_limit(4, Rp, Rp_err, sigma=sigma)
+subearth = get_below_upper_limit(1, Rp, Rp_err, sigma=sigma)
+earth = get_between_limits(1, 1.5, Rp, Rp_err, sigma=sigma)
+superearth = get_between_limits(1.5, 2, Rp, Rp_err, sigma=sigma)
+subneptune = get_between_limits(2, 4, Rp, Rp_err, sigma=sigma)
+neptune = get_between_limits(3.5, 4.5, Rp, Rp_err, sigma=sigma)
+subsaturn = get_between_limits(5, 9, Rp, Rp_err, sigma=sigma)
+saturn = get_between_limits(8.5, 9.5, Rp, Rp_err, sigma=sigma)
+jupiter = get_between_limits(10.5, 11.5, Rp, Rp_err, sigma=sigma)
+inflated = get_between_limits(12, 16, Rp, Rp_err, sigma=sigma)
+large = get_above_lower_limit(16, Rp, Rp_err, sigma=sigma)
 # orbit
-short = Porb < 3
-medium = (Porb >= 3) & (Porb <= 10)
-long = Porb > 10
+short = get_below_upper_limit(3, Porb, Porb_err, sigma=sigma)
+medium = get_between_limits(3, 10, Porb, Porb_err, sigma=sigma)
+long = get_above_lower_limit(10, Porb, Porb_err, sigma=sigma)
 # special
-usp = Porb <= 1
-hotjup = short & (Rp > 11.0)
-radius_gap = (Rp >= 1.8) & (Rp <= 2.0)
+usp = get_below_upper_limit(1, Porb, Porb_err, sigma=sigma)
+hotjup = short & get_above_lower_limit(11, Rp, Rp_err, sigma=sigma)
+radius_gap = get_between_limits(1.8, 2, Rp, Rp_err, sigma=sigma)
 reinflated = (
-    (Rp > 11)  # See Lopez & Fortney 2015: arxiv.org/pdf/1510.00067.pdf
-    & (Porb > 10)
-    & (Porb < 20)
-    & (Rstar > 5)
-    & (Rstar < 10)
-    & (Rstar / Rstar_err < 0.1)
+    get_above_lower_limit(11, Rp, Rp_err, sigma=sigma)  # See Lopez & Fortney 2015: arxiv.org/pdf/1510.00067.pdf
+    & get_between_limits(10, 20, Porb, Porb_err, sigma=sigma)
+    & get_between_limits(5, 10, Rstar, Rstar_err, sigma=sigma)
+    & get_below_upper_limit(1, Rstar/Rstar_err, Rstar/Rstar_err, sigma=sigma)
 )
 
 ## combine filters by uncommenting lines
@@ -105,11 +120,11 @@ idx = (
     # & north
     # & south
     # ---transit---#
-    & deep
-    & hi_snr
+    # & deep
+    # & hi_snr
     # ---star---#
     # & nearby
-    & bright
+    # & bright
     # & cool
     # & dwarf
     # & hot
@@ -125,11 +140,11 @@ idx = (
     # & subearth
     # & superearth
     # & earth
-    & subneptune
+    # & subneptune
     # & neptune
     # & subsaturn
     # & saturn
-    # & jupiter
+    & jupiter
     # & inflated
     # & large
     # ---orbit---#
@@ -137,7 +152,7 @@ idx = (
     # & medium
     # & long
     # ---special---#
-    & usp
+    # & usp
     # & hotjup
     # & tropical & subneptune
     # & tropical & subsaturn
@@ -146,7 +161,7 @@ idx = (
     # & radius_gap
 )
 
-filename_header = "name"
+filename_header = "all"
 if args.save:
     # just save list of toi
     fp = path.join(args.outdir, filename_header + "_tois.txt")
