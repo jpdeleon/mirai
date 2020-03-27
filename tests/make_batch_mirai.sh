@@ -1,13 +1,15 @@
-
 #!/usr/bin/sh
 
-name='toi'
-fp='all_'$name's'
-#start_date='2020-03-20 12:00'
-end_date='2020-03-26 12:00'
-lt2='23:59' #first half night only
-site='tno'
-
-cat $fp.txt | while read toi; do echo mirai $name-$toi -v -s -o $fp -site $site -s -lt2 $lt2 -dt2 $end_date; done > $fp.batch
-echo "Check: cat $fp.batch"
-echo "Run: cat $fp.batch | parallel"
+prefix='usp'
+type='toi'
+infp=$prefix'_'$type's' #e.g. all_tois
+start_date='2020-06-1 00:01'
+end_date='2020-11-30 23:59'
+#lt1='23:59' #second half night only
+#lt2='23:59' #first half night only
+site='wise'
+outdir=$infp'_from_'$site
+outfp=$outdir'.batch'
+cat $infp.txt | while read toi; do echo mirai $type-$toi -v -s -o $outdir -site $site -dt1 $start_date -dt2 $end_date; done > $outfp
+echo "Check: cat $outfp"
+echo "Run: cat $outfp | parallel"

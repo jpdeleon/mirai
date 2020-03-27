@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 r"""
+See https://arxiv.org/pdf/2003.11098.pdf to classify exoplanet systems
+
 1. filter TOI and save TOI list as .txt file
 2. create a batch file to run mirai (see `make_batch_mirai.sh`)
 3. execute batch file using parallel
@@ -15,7 +17,12 @@ import pandas as pd
 
 pd.options.display.float_format = "{:.2f}".format
 
-from mirai.mirai import get_tois, get_between_limits, get_above_lower_limit, get_below_upper_limit
+from mirai.mirai import (
+    get_tois,
+    get_between_limits,
+    get_above_lower_limit,
+    get_below_upper_limit,
+)
 
 arg = argparse.ArgumentParser()
 arg.add_argument(
@@ -29,21 +36,37 @@ arg.add_argument(
     default=False,
 )
 arg.add_argument(
-    "-sig",
-    "--sigma",
-    help="lower & upper limits",
-    default=1,
+    "-sig", "--sigma", help="strict=1 (default); conservative=3", default=1
+)
+arg.add_argument(
+    "-f",
+    "--frac_error",
+    help="allowed fractional error in parameter",
+    default=None,
+    type=float,
 )
 args = arg.parse_args()
 
-output_colums = "TOI,Planet Radius (R_Earth),Planet Radius (R_Earth) err".split(
+# fetch toi table from exofop tess
+tois = get_tois(remove_FP=True, clobber=False, verbose=False)
+output_colums = "TOI,Period (days),Planet Radius (R_Earth),Planet Radius (R_Earth) err".split(
     ","
 )
 sigma = args.sigma
 
-# fetch toi table from exofop tess
-tois = get_tois(remove_FP=True, clobber=False, verbose=False)
-tois = tois.drop_duplicates(subset=['Planet Radius (R_Earth)', 'Planet Radius (R_Earth) err'], keep='first')
+tois = tois.drop_duplicates(
+    subset=["Planet Radius (R_Earth)", "Planet Radius (R_Earth) err"],
+    keep="first",
+)
+if args.frac_error:
+    idx1 = (
+        tois["Planet Radius (R_Earth) err"] / tois["Planet Radius (R_Earth)"]
+    ) < args.frac_error
+    idx2 = (
+        tois["Period (days) err"] / tois["Period (days)"]
+    ) < args.frac_error
+    idx3 = (tois["Depth (mmag) err"] / tois["Depth (mmag)"]) < args.frac_error
+    tois = tois[idx1 & idx2 & idx3]
 Rp = tois["Planet Radius (R_Earth)"]
 Rp_err = tois["Planet Radius (R_Earth) err"]
 Porb = tois["Period (days)"]
@@ -62,7 +85,7 @@ distance_err = tois["Stellar Distance (pc) err"]
 
 # ---define filters---#
 # transit
-deep =  get_above_lower_limit(5, depth, depth_err, sigma=sigma)  # 1ppt
+deep = get_above_lower_limit(5, depth, depth_err, sigma=sigma)  # 1ppt
 hi_snr = get_above_lower_limit(10, tois["Planet SNR"], 1, sigma=sigma)
 # multisector = tois['Sectors'].apply(lambda x: True if len(x.split(',')) > 1 else False)
 # site-specific
@@ -71,20 +94,20 @@ north = coord.dec.deg > -20
 south = coord.dec.deg < 20
 # star
 bright = get_below_upper_limit(11, Tmag, Tmag_err, sigma=sigma)
-cool =  get_below_upper_limit(3500, Teff, Teff_err, sigma=sigma)
+cool = get_below_upper_limit(3500, Teff, Teff_err, sigma=sigma)
 hot = get_above_lower_limit(6500, Teff, Teff_err, sigma=sigma)
 dwarf = get_below_upper_limit(0.6, Rstar, Rstar_err, sigma=sigma)
 giant = get_above_lower_limit(1.6, Rstar, Rstar_err, sigma=sigma)
-sunlike = (
-        get_between_limits(0.9, 1.1, Rstar, Rstar_err, sigma=sigma) &
-        get_between_limits(5500, 6000, Teff, Teff_err, sigma=sigma)
-        )
+sunlike = get_between_limits(
+    0.9, 1.1, Rstar, Rstar_err, sigma=sigma
+) & get_between_limits(5500, 6000, Teff, Teff_err, sigma=sigma)
 nearby = get_below_upper_limit(300, distance, distance_err, sigma=sigma)
 # young = tois["Stellar log(g) (cm/s^2)"] > 4.5
 # planet
 temperate = get_between_limits(300, 500, Teff, Teff_err, sigma=sigma)
 tropical = get_between_limits(500, 800, Teff, Teff_err, sigma=sigma)
 warm = get_above_lower_limit(800, Teff, Teff_err, sigma=sigma)  # hot?
+not_hot = get_below_upper_limit(1000, Teff, Teff_err, sigma=sigma)
 # size
 small = get_below_upper_limit(4, Rp, Rp_err, sigma=sigma)
 subearth = get_below_upper_limit(1, Rp, Rp_err, sigma=sigma)
@@ -106,10 +129,14 @@ usp = get_below_upper_limit(1, Porb, Porb_err, sigma=sigma)
 hotjup = short & get_above_lower_limit(11, Rp, Rp_err, sigma=sigma)
 radius_gap = get_between_limits(1.8, 2, Rp, Rp_err, sigma=sigma)
 reinflated = (
-    get_above_lower_limit(11, Rp, Rp_err, sigma=sigma)  # See Lopez & Fortney 2015: arxiv.org/pdf/1510.00067.pdf
+    get_above_lower_limit(
+        11, Rp, Rp_err, sigma=sigma
+    )  # See Lopez & Fortney 2015: arxiv.org/pdf/1510.00067.pdf
     & get_between_limits(10, 20, Porb, Porb_err, sigma=sigma)
     & get_between_limits(5, 10, Rstar, Rstar_err, sigma=sigma)
-    & get_below_upper_limit(1, Rstar/Rstar_err, Rstar/Rstar_err, sigma=sigma)
+    & get_below_upper_limit(
+        1, Rstar / Rstar_err, Rstar / Rstar_err, sigma=sigma
+    )
 )
 
 ## combine filters by uncommenting lines
@@ -120,8 +147,8 @@ idx = (
     # & north
     # & south
     # ---transit---#
-    # & deep
-    # & hi_snr
+    & deep
+    & hi_snr
     # ---star---#
     # & nearby
     # & bright
@@ -135,16 +162,17 @@ idx = (
     # ---planet---#
     # & temperate
     # & tropical
+    # & not_hot
     # & warm
     # & small
     # & subearth
-    # & superearth
     # & earth
+    # & superearth
     # & subneptune
     # & neptune
-    # & subsaturn
+    & subsaturn
     # & saturn
-    & jupiter
+    # & jupiter
     # & inflated
     # & large
     # ---orbit---#
@@ -161,7 +189,7 @@ idx = (
     # & radius_gap
 )
 
-filename_header = "all"
+filename_header = "subsaturn"
 if args.save:
     # just save list of toi
     fp = path.join(args.outdir, filename_header + "_tois.txt")

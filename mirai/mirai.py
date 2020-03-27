@@ -32,11 +32,26 @@ __all__ = [
     "get_above_lower_limit",
     "get_between_limits",
 ]
-
-# lat,lon, elev, local timezone
+# TODO: EarthLocation().get_site_names(); pytz.all_timezones()
+# subaru = EarthLocation().of_site("subaru")
+# latlonh = subaru.geodetic;
+# subaru.info.meta['timezone']
 SITES = {
+    # lat,lon, elev, local timezone
     "OAO": (34.5761, 133.5941, 343, "Asia/Tokyo"),  # Okayama
+    "ALI": (32.3167, 80.0167, 5100, "Etc/GMT+8"),  # Ali Obs, Tibet, China
+    "MCDO": (30.67, -104.02, 2070, "UCT"),  # Texas, Central Time
+    "WISE": (30.5958, 34.76333, 875, "Asia/Jerusalem"),  # NRES@WISE
     "OT": (28.291, 343.5033, 2395, "UTC"),  # Teide
+    "HLK": (20.7075, -156.2561, 3055, "Pacific/Honolulu"),  # Haleakala
+    "TNO": (18.59056, 98.48656, 2457, "Asia/Bangkok"),  # Thai national obs
+    "TRO": (-30.1692, -70.805, 2286, "America/Santiago"),  # cerro tololo obs
+    "CTIO": (
+        -30.1675,
+        -70.8047,
+        2198,
+        "America/Santiago",
+    ),  # Cerro Tololo, Chile
     "SBO": (
         -31.2733,
         149.0617,
@@ -44,11 +59,9 @@ SITES = {
         "Australia/Brisbane",
     ),  # spring brook obs
     "AAO": (-31.2754, 149.067, 1164, "Australia/NSW"),  # aka siding spring obs
-    "TRO": (-30.1692, -70.805, 2286, "America/Santiago"),  # cerro tololo obs
-    "TNO": (18.59056, 98.48656, 2457, "Asia/Bangkok"),  # Thai national obs
     "SAAO": (
-        -32.376006,
-        20.810678,
+        -32.3760,
+        20.8107,
         1798,
         "Africa/Johannesburg",
     ),  # South Africa astro obs
@@ -518,26 +531,22 @@ def plot_full_transit(
 def plot_partial_transit():
     raise NotImplementedError()
 
-def get_below_upper_limit(upper, data_mu, data_sig, sigma=1):
-    idx = (
-            norm.cdf(upper, loc=data_mu, scale=data_sig) <
-            norm.cdf(sigma)
-            )
-    return idx
 
 def get_above_lower_limit(lower, data_mu, data_sig, sigma=1):
-    idx = (
-            norm.cdf(lower, loc=data_mu, scale=data_sig) >
-            norm.cdf(-sigma)
-            )
+    idx = norm.cdf(lower, loc=data_mu, scale=data_sig) < norm.cdf(sigma)
     return idx
+
+
+def get_below_upper_limit(upper, data_mu, data_sig, sigma=1):
+    idx = norm.cdf(upper, loc=data_mu, scale=data_sig) > norm.cdf(-sigma)
+    return idx
+
 
 def get_between_limits(lower, upper, data_mu, data_sig, sigma=1):
     """
-    filter data within limits lower and upper limits
+    filter data between lower and upper limits
     """
-    idx =  (
-            get_above_lower_limit(lower, data_mu, data_sig, sigma=sigma) &
-            get_below_upper_limit(upper, data_mu, data_sig, sigma=sigma)
-            )
+    idx = get_above_lower_limit(
+        lower, data_mu, data_sig, sigma=sigma
+    ) & get_below_upper_limit(upper, data_mu, data_sig, sigma=sigma)
     return idx
