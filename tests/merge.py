@@ -10,7 +10,7 @@ if __name__ == "__main__":
         description="merge individual transit predictions output by mirai"
     )
     arg.add_argument(
-        "-in", "--input_dir", help="directory location", type=str, default="."
+        "input_dir", help="directory location", type=str, default="."
     )
     arg.add_argument(
         "-s",
@@ -33,13 +33,15 @@ if __name__ == "__main__":
     for i in filelist:
         d = pd.read_csv(i)
         name = i.split(indir)[1].split("/")[1].split("_")[0]
-        d.insert(0, "name", name)
+        if "name" not in d.columns:
+            d.insert(0, "name", name)
         ds.append(d)
 
     df = pd.concat(ds)
+    df = df.drop("Unnamed: 0", axis=1)
     if args.save:
         fp = join(indir, "merged.csv")
-        df.to_csv(fp)
+        df.to_csv(fp, index=False)
         print(f"Saved: {fp}")
     else:
         print(df)

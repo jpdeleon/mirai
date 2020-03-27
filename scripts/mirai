@@ -249,7 +249,7 @@ if __name__ == "__main__":
             d2 = format_datetime(obs_end.datetime)
 
             # check if target is visible each midnight from obs site
-            if not args.next_transit:
+            if (not args.next_transit) & (baseline < 31):
                 # TODO: very slow for long baseline!
                 midnights = []
                 for n in range(int(baseline)):
@@ -410,6 +410,8 @@ if __name__ == "__main__":
                 # save all figures
                 if not path.exists(outdir):
                     makedirs(outdir)
+
+                # if path.exists() and (not args.clobber):
 
                 if args.next_transit | (len(full) == 1):
                     # save only one
