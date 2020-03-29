@@ -98,7 +98,7 @@ def parse_ing_egr_list(ing_egr_list, details=None):
     return np.c_[(t12, tmid, t34)]
 
 
-def format_datetime(datetime, datefmt="%d%b%Y"):
+def format_datetime(datetime, datefmt="%Y%b%d"):
     return datetime.date().strftime(datefmt)
 
 
@@ -201,11 +201,18 @@ def get_ephem_from_nexsci(target):
 
 
 def parse_target_coord(target):
+    """
+    parse target string and query coordinates; e.g.
+    toi.X, ctoi.X, tic.X, gaiaX, epicX, Simbad name
+    """
+    assert isinstance(target, str)
     if len(target.split(",")) == 2:
-        # coordinates
+        # coordinates: ra, dec
         if len(target.split(":")) == 6:
+            # e.g. 01:02:03.0, 04:05:06.0
             coord = SkyCoord(target, unit=("hourangle", "degree"))
         else:
+            # e.g. 70.5, 80.5
             coord = SkyCoord(target, unit=("deg", "degree"))
     else:
         # name or ID
@@ -242,6 +249,7 @@ def get_tois(
     verbose=False,
     remove_FP=True,
     remove_known_planets=False,
+    add_FPP=True,
 ):
     """Download TOI list from TESS Alert/TOI Release.
 
@@ -266,10 +274,23 @@ def get_tois(
 
     if not exists(fp) or clobber:
         d = pd.read_csv(dl_link)  # , dtype={'RA': float, 'Dec': float})
-        msg = "Downloading {}\n".format(dl_link)
+        msg = f"Downloading {dl_link}\n"
+        if add_FPP:
+            fp2 = join(outdir, "Giacalone2020/tab4.txt")
+            classified = ascii.read(fp2).to_pandas()
+            fp3 = join(outdir, "Giacalone2020/tab5.txt")
+            unclassified = ascii.read(fp3).to_pandas()
+            fpp = pd.concat(
+                [
+                    classified[["TOI", "FPP-2m", "FPP-30m"]],
+                    unclassified[["TOI", "FPP"]],
+                ],
+                sort=True,
+            )
+            d = pd.merge(d, fpp, how="outer").drop_duplicates()
     else:
         d = pd.read_csv(fp).drop_duplicates()
-        msg = "Loaded: {}\n".format(fp)
+        msg = f"Loaded: {fp}\n"
     d.to_csv(fp, index=False)
 
     # remove False Positives
@@ -301,11 +322,59 @@ def get_tois(
             d = d[idx]
             if idx.sum() > 0:
                 keys.append(key)
-        msg += "{} planets are removed.\n".format(keys)
-    msg += "Saved: {}\n".format(fp)
+        msg += f"{keys} planets are removed.\n"
+    msg += f"Saved: {fp}\n"
     if verbose:
         print(msg)
     return d.sort_values("TOI")
+
+
+def get_toi(toi, verbose=False, remove_FP=False, clobber=False):
+    """Query TOI from TOI list
+
+    Parameters
+    ----------
+    toi : float
+        TOI id
+    clobber : bool
+        re-download csv file
+    outdir : str
+        csv path
+    verbose : bool
+        print texts
+
+    Returns
+    -------
+    q : pandas.DataFrame
+        TOI match else None
+    """
+    df = get_tois(verbose=False, remove_FP=remove_FP, clobber=clobber)
+
+    if isinstance(toi, int):
+        toi = float(str(toi) + ".01")
+    else:
+        planet = str(toi).split(".")[1]
+        assert len(planet) == 2, "use pattern: TOI.01"
+    idx = df["TOI"].isin([toi])
+    q = df.loc[idx]
+    assert len(q) > 0, "TOI not found!"
+
+    q.index = q["TOI"].values
+    if verbose:
+        print("Data from TOI Release:\n")
+        columns = [
+            "Period (days)",
+            "Epoch (BJD)",
+            "Duration (hours)",
+            "Depth (ppm)",
+            "Comments",
+        ]
+        print(f"{q[columns].T}\n")
+
+    if q["TFOPWG Disposition"].isin(["FP"]).any():
+        print("\nTFOPWG disposition is a False Positive!\n")
+
+    return q.sort_values(by="TOI", ascending=True)
 
 
 def get_ctois(clobber=True, outdir=DATA_PATH, verbose=False, remove_FP=True):
@@ -351,66 +420,31 @@ def get_ctois(clobber=True, outdir=DATA_PATH, verbose=False, remove_FP=True):
     return d.sort_values("CTOI")
 
 
-def get_toi(toiid, clobber=True, outdir=DATA_PATH, verbose=False):
-    """Query TOI from TOI list
+def get_ctoi(ctoi, verbose=False, remove_FP=False, clobber=False):
+    """Query CTOI from CTOI list
 
     Parameters
     ----------
-    toiid : float
-        TOI id
-    clobber : bool
-        re-download csv file
-    outdir : str
-        csv path
-    verbose : bool
-        print texts
+    ctoi : float
+        CTOI id
 
     Returns
     -------
     q : pandas.DataFrame
-        TOI match else None
+        CTOI match else None
     """
+    ctoi = float(ctoi)
+    df = get_ctois(verbose=False, remove_FP=remove_FP, clobber=clobber)
 
-    df = get_tois(clobber=clobber, verbose=verbose, outdir=outdir)
-
-    if isinstance(toiid, int):
-        toiid = float(str(toiid) + ".01")
+    if isinstance(ctoi, int):
+        ctoi = float(str(ctoi) + ".01")
     else:
-        planet = str(toiid).split(".")[1]
-        assert len(planet) == 2, "use pattern: TOI.01"
-    idx = df["TOI"].isin([toiid])
-    q = df.loc[idx]
-    assert len(q) > 0, f"TOI {toiid} not found!"
-
-    q.index = q["TOI"].values
-    if verbose:
-        print("Data from TOI Release:\n")
-        columns = [
-            "Period (days)",
-            "Epoch (BJD)",
-            "Duration (hours)",
-            "Depth (ppm)",
-            "Comments",
-        ]
-        print("{}\n".format(q[columns].T))
-
-    if q["TFOPWG Disposition"].isin(["FP"]).any():
-        print("\nTFOPWG disposition is a False Positive!\n")
-
-    return q.sort_values(by="TOI", ascending=True)
-
-
-def get_ctoi(ctoiid, clobber=True, outdir=DATA_PATH, verbose=False):
-    if isinstance(ctoiid, int):
-        ctoiid = float(str(ctoiid) + ".01")
-    else:
-        planet = str(ctoiid).split(".")[1]
+        planet = str(ctoi).split(".")[1]
         assert len(planet) == 2, "use pattern: CTOI.01"
+    idx = df["CTOI"].isin([ctoi])
 
-    df = get_ctois(clobber=clobber, verbose=verbose, outdir=outdir)
-    idx = df["CTOI"].isin([ctoiid])
     q = df.loc[idx]
-    assert len(q) > 0, f"CTOI {ctoiid} not found!"
+    assert len(q) > 0, "CTOI not found!"
 
     q.index = q["CTOI"].values
     if verbose:
@@ -419,13 +453,15 @@ def get_ctoi(ctoiid, clobber=True, outdir=DATA_PATH, verbose=False):
             "Period (days)",
             "Midpoint (BJD)",
             "Duration (hours)",
-            "Depth (ppm)",
-            # "Comments",
+            "Depth ppm",
+            "Notes",
         ]
-        print("{}\n".format(q[columns].T))
+        print(f"{q[columns].T}\n")
+    if (q["TFOPWG Disposition"].isin(["FP"]).any()) | (
+        q["User Disposition"].isin(["FP"]).any()
+    ):
+        print("\nTFOPWG/User disposition is a False Positive!\n")
 
-    if q["User Disposition"].isin(["FP"]).any():
-        print("\nUser disposition is a False Positive!\n")
     return q.sort_values(by="CTOI", ascending=True)
 
 
