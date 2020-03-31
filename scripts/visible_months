@@ -1,0 +1,260 @@
+#!/usr/bin/env python
+r"""
+Transit and ephemeris calculator
+Note: eclipse times are computed without any barycentric corrections
+see also https://github.com/nespinoza/exotoolbox/blob/master/exotoolbox/utils.py#L779
+"""
+from os import makedirs, path
+import sys
+import time
+import datetime as dt
+import argparse
+from pytz import timezone as tz
+import traceback
+
+# from astroquery.exoplanet_orbit_database import ExoplanetOrbitDatabase
+import numpy as np
+
+# import matplotlib.pyplot as pl
+from astroplan import FixedTarget, Observer, EclipsingSystem
+from astroplan import (
+    PrimaryEclipseConstraint,
+    MoonSeparationConstraint,
+    is_event_observable,
+    is_always_observable,
+    months_observable,
+    AtNightConstraint,
+    AltitudeConstraint,
+    LocalTimeConstraint,
+    AirmassConstraint,
+)
+from astropy.coordinates import SkyCoord, EarthLocation
+from astropy.time import Time, TimeDelta
+import astropy.units as u
+
+from mirai import parse_target_coord, SITES
+
+if __name__ == "__main__":
+    arg = argparse.ArgumentParser(
+        description="set-up target and observation settings"
+    )
+    help = (
+        "target name/coord e.g. EPICx/K2x or TIC/TOIx or WASP-x or Gaia DR2x\n"
+    )
+    help += "or 1:12:43.2, +1:12:43 (hms, dms) or 18.18, 1.21 (deg, deg)"
+    arg.add_argument("target", help=help, type=str)
+    arg.add_argument(
+        "-site",
+        "--obs_site_name",
+        help=f"observation site name: {list(SITES.keys())} (default OT)",
+        type=str,
+        default="OT",
+    )
+    arg.add_argument(
+        "-lt1",
+        "--start_localtime",
+        help="start time of observation [LT] e.g. 19:00 (default=sunset)",
+        type=str,
+        default=None,
+    )
+    arg.add_argument(
+        "-lt2",
+        "--end_localtime",
+        help="end time of observation [LT] (default=sunrise)",
+        type=str,
+        default=None,
+    )
+    arg.add_argument(
+        "-tz", "--timezone", help="time zone", type=str, default="UTC"
+    )
+    # arg.add_argument('-lt', '--use_local_timezone', help='use local time zone', action='store_true', default=False)
+    arg.add_argument(
+        "-lat",
+        "--site_lat",
+        help="custom site latitude [deg]",
+        type=float,
+        default=None,
+    )
+    arg.add_argument(
+        "-lon",
+        "--site_lon",
+        help="custom site longitude [deg]",
+        type=float,
+        default=None,
+    )
+    arg.add_argument(
+        "-elev",
+        "--site_elev",
+        help="custom site elevation [m]",
+        type=float,
+        default=None,
+    )
+    # constraints
+    arg.add_argument(
+        "-alt",
+        "--alt_limit",
+        help="target altitude limit [deg]",
+        type=float,
+        default=30,
+    )
+    arg.add_argument(
+        "-sep",
+        "--min_moon_sep",
+        help="moon separation limit [deg]",
+        type=float,
+        default=10,
+    )
+    arg.add_argument(
+        "-dt", "--time_grid_resolution", help="5 [hour]", type=float, default=5
+    )
+    # arg.add_argument(
+    #     "-p",
+    #     "--plot_target",
+    #     help="plot airmass and altitude of target on first observable date",
+    #     action="store_true",
+    #     default=False,
+    # )
+    arg.add_argument(
+        "-s",
+        "--save",
+        help="save in a csv file",
+        action="store_true",
+        default=False,
+    )
+    arg.add_argument(
+        "-v",
+        "--verbose",
+        help="print details",
+        action="store_true",
+        default=False,
+    )
+    arg.add_argument(
+        "--show_site_names",
+        help="print accepted site_names",
+        action="store_true",
+        default=False,
+    )
+    arg.add_argument(
+        "-o", "--outdir", help="output directory", type=str, default=None
+    )
+
+    args = arg.parse_args(None if sys.argv[1:] else ["-h"])
+    if args.show_site_names:
+        # TODO: add this to SITES
+        print(EarthLocation.get_site_names())
+
+    else:
+        target = args.target.lower().strip().replace("-", "")
+        if len(target.split(".")) == 1:
+            # e.g. if TOI,then add .01
+            target = target + ".01"
+        target_coord = parse_target_coord(target)
+        # use target name as name of output directory
+        outdir = args.outdir if args.outdir is not None else target
+
+        obs_start = Time.now()
+        obs_end = obs_start + TimeDelta(366, format="jd")
+
+        site_name = args.obs_site_name.upper()
+        timezone = args.timezone
+
+        try:
+            # observatory site
+            if site_name is not None:
+                all_sites = list(SITES.keys())
+                # TODO: add LCO in sites using EarthLocation
+                assert site_name in all_sites, f"-site={all_sites}"
+                lat, lon, elev, timezone = SITES[site_name]
+            elif (
+                (lat is not None)
+                & (lon is not None)
+                & (elev is not None)
+                & (timezone is not None)
+            ):
+                lat = args.site_lat
+                lon = args.site_lon
+                elev = args.site_elev
+            else:
+                # default: Observatorio del Teide
+                lat, lon, elev, timezone = SITES["OT"]
+            obs_site = Observer(
+                latitude=lat * u.deg,
+                longitude=lon * u.deg,
+                elevation=elev * u.m,
+                name=site_name,
+                timezone=timezone,
+            )
+
+            # observation constraints
+            utc_offset = (
+                tz(timezone).localize(obs_start.datetime).strftime("%z")
+            )
+
+            if args.verbose:
+                print(
+                    f"Target: {target} | ra, dec=({target_coord.to_string()})"
+                )
+                print(
+                    f"Site: {obs_site.name} ({lat}d, {lon}d, {elev}m, UT{utc_offset[:3]})"
+                )
+
+            # see https://astroplan.readthedocs.io/en/latest/tutorials/constraints.html
+            constraints = [
+                AtNightConstraint.twilight_civil(),  # between sunset and sunrise
+                AltitudeConstraint(min=args.alt_limit * u.deg),
+                MoonSeparationConstraint(min=args.min_moon_sep * u.deg),
+            ]
+            if (args.start_localtime is not None) | (
+                args.end_localtime is not None
+            ):
+                if args.start_localtime is not None:
+                    hr, min = args.start_localtime.split(":")
+                    min_lt = dt.time(int(hr), int(min))
+                else:
+                    min_lt = obs_site.sun_set_time(obs_start).datetime.time()
+                if args.end_localtime is not None:
+                    hr, min = args.end_localtime.split(":")
+                    max_lt = dt.time(int(hr), int(min))
+                else:
+                    # TODO: is sun_rise_time on obs_start accurate?
+                    max_lt = obs_site.sun_rise_time(obs_start).datetime.time()
+                constraints.append(LocalTimeConstraint(min=min_lt, max=max_lt))
+
+            dt = args.time_grid_resolution
+            months = months_observable(
+                constraints,
+                obs_site,
+                [target_coord],
+                time_grid_resolution=dt * u.hour,
+            )
+            if len(months[0]) > 0:
+                if args.verbose:
+                    print(f"Target is visible on months:\n{months}")
+            else:
+                errmsg = f"Target is not observable from {obs_site.name}"
+                raise ValueError(errmsg)
+
+            if args.save:
+                # save all figures
+                if not path.exists(outdir):
+                    makedirs(outdir)
+                fp = path.join(
+                    outdir, f"{target}_{obs_site.name}_visible_months.csv"
+                )
+                np.savetxt(fp, months, delimiter=",", fmt="%s")
+                if args.verbose:
+                    print(f"Saved: {fp}")
+        except Exception:
+            # Get current system exception
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            # Extract unformatter stack traces as tuples
+            trace_back = traceback.extract_tb(ex_traceback)
+
+            # print(f"Exception type: {ex_type.__name__}")
+            print(f"Error message: {ex_value}")
+            # Format stacktrace
+            for trace in trace_back:
+                print(f"File: {trace[0]} (Line: {trace[1]})")
+                # print(f"Func : {trace[2]}")
+                # print(f"Message : {trace[3]}")
+                print("\n\n")

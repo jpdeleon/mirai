@@ -28,6 +28,7 @@ __all__ = [
     "format_datetime",
     "parse_ing_egr",
     "parse_ing_egr_list",
+    "parse_mid_list",
     "get_below_upper_limit",
     "get_above_lower_limit",
     "get_between_limits",
@@ -36,6 +37,7 @@ __all__ = [
 # subaru = EarthLocation().of_site("subaru")
 # latlonh = subaru.geodetic;
 # subaru.info.meta['timezone']
+# TCS@OT, PROMPT-8/TRO @ CTIO, 188/Seimei@OAO
 SITES = {
     # lat,lon, elev, local timezone
     "OAO": (34.5761, 133.5941, 343, "Asia/Tokyo"),  # Okayama
@@ -45,7 +47,6 @@ SITES = {
     "OT": (28.291, 343.5033, 2395, "UTC"),  # Teide
     "HLK": (20.7075, -156.2561, 3055, "Pacific/Honolulu"),  # Haleakala
     "TNO": (18.59056, 98.48656, 2457, "Asia/Bangkok"),  # Thai national obs
-    "TRO": (-30.1692, -70.805, 2286, "America/Santiago"),  # cerro tololo obs
     "CTIO": (
         -30.1675,
         -70.8047,
@@ -58,6 +59,7 @@ SITES = {
         1145,
         "Australia/Brisbane",
     ),  # spring brook obs
+    "SSO": (-31.2754, 149.067, 1164, "Australia/NSW"),
     "AAO": (-31.2754, 149.067, 1164, "Australia/NSW"),  # aka siding spring obs
     "SAAO": (
         -32.3760,
@@ -92,6 +94,24 @@ def parse_ing_egr_list(ing_egr_list, details=None):
     for ing, egr in ing_egr_list:
         t14 = (egr - ing).value
         mid = ing + dt.timedelta(days=t14 / 2)
+        t12.append(ing.tdb.iso)
+        tmid.append(mid.tdb.iso)
+        t34.append(egr.tdb.iso)
+    return np.c_[(t12, tmid, t34)]
+
+
+def parse_mid_list(mid_list, transit_duration):
+    """
+    TODO: make sure tdb iso is precise
+
+    output will be saved in csv
+    """
+    t12 = ["ingress"]
+    tmid = ["midtransit"]
+    t34 = ["egress"]
+    for mid in mid_list:
+        ing = mid - dt.timedelta(days=transit_duration / 2)
+        egr = mid + dt.timedelta(days=transit_duration / 2)
         t12.append(ing.tdb.iso)
         tmid.append(mid.tdb.iso)
         t34.append(egr.tdb.iso)
@@ -213,7 +233,7 @@ def parse_target_coord(target):
             coord = SkyCoord(target, unit=("hourangle", "degree"))
         else:
             # e.g. 70.5, 80.5
-            coord = SkyCoord(target, unit=("deg", "degree"))
+            coord = SkyCoord(target, unit=("degree", "degree"))
     else:
         # name or ID
         if target[:3] == "toi":
@@ -249,7 +269,6 @@ def get_tois(
     verbose=False,
     remove_FP=True,
     remove_known_planets=False,
-    add_FPP=True,
 ):
     """Download TOI list from TESS Alert/TOI Release.
 
@@ -273,30 +292,18 @@ def get_tois(
         os.makedirs(outdir)
 
     if not exists(fp) or clobber:
+        msg = f"Downloading {dl_link}"
         d = pd.read_csv(dl_link)  # , dtype={'RA': float, 'Dec': float})
-        msg = f"Downloading {dl_link}\n"
-        if add_FPP:
-            fp2 = join(outdir, "Giacalone2020/tab4.txt")
-            classified = ascii.read(fp2).to_pandas()
-            fp3 = join(outdir, "Giacalone2020/tab5.txt")
-            unclassified = ascii.read(fp3).to_pandas()
-            fpp = pd.concat(
-                [
-                    classified[["TOI", "FPP-2m", "FPP-30m"]],
-                    unclassified[["TOI", "FPP"]],
-                ],
-                sort=True,
-            )
-            d = pd.merge(d, fpp, how="outer").drop_duplicates()
+        d.to_csv(fp, index=False)
     else:
-        d = pd.read_csv(fp).drop_duplicates()
+        d = pd.read_csv(fp)
         msg = f"Loaded: {fp}\n"
-    d.to_csv(fp, index=False)
+    assert len(d) > 1000, f"{fp} likely has been overwritten!"
 
     # remove False Positives
     if remove_FP:
         d = d[d["TFOPWG Disposition"] != "FP"]
-        msg += "TOIs with TFPWG disposition==FP are removed.\n"
+        msg += "TOIs with TFOPWG disposition==FP are removed.\n"
     if remove_known_planets:
         planet_keys = [
             "HD",
@@ -326,10 +333,10 @@ def get_tois(
     msg += f"Saved: {fp}\n"
     if verbose:
         print(msg)
-    return d.sort_values("TOI")
+    return d.sort_values("TOI", ascending=True)
 
 
-def get_toi(toi, verbose=False, remove_FP=False, clobber=False):
+def get_toi(toi, verbose=False, remove_FP=True, clobber=False):
     """Query TOI from TOI list
 
     Parameters
@@ -465,8 +472,8 @@ def get_ctoi(ctoi, verbose=False, remove_FP=False, clobber=False):
     return q.sort_values(by="CTOI", ascending=True)
 
 
-def get_coord_from_toiid(toiid):
-    toi = get_toi(toiid)
+def get_coord_from_toiid(toiid, **kwargs):
+    toi = get_toi(toiid, **kwargs)
     coord = SkyCoord(
         ra=toi["RA"].values[0],
         dec=toi["Dec"].values[0],
@@ -521,7 +528,12 @@ def get_coord_from_gaiaid(gaiaid):
 
 
 def plot_full_transit(
-    obs_date, target_coord, obs_site, name=None, ephem_label=None
+    obs_date,
+    target_coord,
+    obs_site,
+    name=None,
+    ephem_label=None,
+    night_only=True,
 ):
     """
     """
@@ -556,16 +568,61 @@ def plot_full_transit(
     if ephem_label is not None:
         name += f" @ {obs_site.name}, {ephem_label}"
     ax.set_title(name)
-
-    sunset = obs_site.sun_set_time(ing)
-    sunrise = obs_site.sun_rise_time(egr)
-    ax.set_xlim(sunset.datetime, sunrise.datetime)
+    if night_only:
+        sunset = obs_site.sun_set_time(ing)
+        sunrise = obs_site.sun_rise_time(egr)
+        ax.set_xlim(sunset.datetime, sunrise.datetime)
     fig.tight_layout()
     return fig
 
 
-def plot_partial_transit():
-    raise NotImplementedError()
+def plot_partial_transit(
+    midpoint,
+    target_coord,
+    obs_site,
+    transit_duration=None,
+    name=None,
+    ephem_label=None,
+    night_only=True,
+):
+    """
+    transit_duration : float
+        in days
+    """
+    fig, ax = pl.subplots(1, 1, figsize=(10, 6))
+    if transit_duration is not None:
+        ing = midpoint - dt.timedelta(days=transit_duration / 2)
+        egr = midpoint + dt.timedelta(days=transit_duration / 2)
+        sunset = obs_site.sun_set_time(ing)
+        sunrise = obs_site.sun_rise_time(egr)
+    else:
+        sunset = obs_site.sun_set_time(midpoint)
+        sunrise = obs_site.sun_rise_time(midpoint)
+    _ = plot_altitude(
+        targets=target_coord,
+        observer=obs_site,
+        time=midpoint.datetime,
+        brightness_shading=True,
+        airmass_yaxis=True,
+        min_altitude=20,  # deg
+        ax=ax,
+    )
+
+    ax.axhline(30, 0, 1, c="r", ls="--", label="limit")
+    ax.axvline(midpoint.datetime, 0, 1, c="k", ls="-", label="mid")
+    if transit_duration is not None:
+        ax.axvline(ing.datetime, 0, 1, c="k", ls="--", label="ing/egr")
+        ax.axvline(egr.datetime, 0, 1, c="k", ls="--", label="_nolegend_")
+    if name is None:
+        name = f"ra, dec=({target_coord.to_string()})"
+
+    if ephem_label is not None:
+        name += f" @ {obs_site.name}, {ephem_label}"
+    ax.set_title(name)
+    if night_only:
+        ax.set_xlim(sunset.datetime, sunrise.datetime)
+    fig.tight_layout()
+    return fig
 
 
 def get_above_lower_limit(lower, data_mu, data_sig, sigma=1):

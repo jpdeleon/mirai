@@ -38,10 +38,14 @@ if __name__ == "__main__":
         ds.append(d)
 
     df = pd.concat(ds)
-    df = df.drop("Unnamed: 0", axis=1)
+    # df = df.drop("Unnamed: 0", axis=1)
+    s = pd.Series(df["name"].unique(), name="name").sort_values()
     if args.save:
         fp = join(indir, "merged.csv")
         df.to_csv(fp, index=False)
         print(f"Saved: {fp}")
+        fp2 = join(indir, "merged_unique_name.csv")
+        s.to_csv(fp2, index=False)
+        print(f"Saved: {fp2}")
     else:
         print(df)

@@ -35,14 +35,14 @@ import astropy.units as u
 from mirai import (
     parse_target_coord,
     SITES,
-    get_tois,
-    get_ctois,
-    plot_full_transit,
     get_ephem_from_nexsci,
+    get_t0_per_dur,
     format_datetime,
     parse_ing_egr,
     parse_ing_egr_list,
-    get_t0_per_dur,
+    parse_mid_list,
+    plot_full_transit,
+    plot_partial_transit,
 )
 
 DEFAULT_BASELINE = 7  # days; when -dt1 is given but -dt2 is not
@@ -177,6 +177,12 @@ if __name__ == "__main__":
         default=False,
     )
     arg.add_argument(
+        "-show_daytime",
+        help="show day time in plots",
+        action="store_true",
+        default=False,
+    )
+    arg.add_argument(
         "--show_site_names",
         help="print accepted site_names",
         action="store_true",
@@ -186,13 +192,17 @@ if __name__ == "__main__":
         "-o", "--outdir", help="output directory", type=str, default=None
     )
 
-    args = arg.parse_args()
+    args = arg.parse_args(None if sys.argv[1:] else ["-h"])
+    night_only = ~args.show_daytime
     if args.show_site_names:
         # TODO: add this to SITES
         print(EarthLocation.get_site_names())
 
     else:
         target = args.target.lower().strip().replace("-", "")
+        if args.verbose:
+            print("=" * 50)
+            print(f"Target: {target}")
         target_coord = parse_target_coord(target)
         # use target name as name of output directory
         outdir = args.outdir if args.outdir is not None else target
@@ -248,30 +258,13 @@ if __name__ == "__main__":
             d1 = format_datetime(obs_start.datetime)
             d2 = format_datetime(obs_end.datetime)
 
-            # check if target is visible each midnight from obs site
-            if (not args.next_transit) & (baseline < 31):
-                # TODO: very slow for long baseline!
-                midnights = []
-                for n in range(int(baseline)):
-                    # get midnight times each day between obs_start and obs_end
-                    night = obs_start + n * u.day
-                    midnight = obs_site.sun_set_time(night) + 5 * u.hour
-                    midnights.append(midnight)
-                visibility = obs_site.target_is_up(midnights, target_coord)
-                if sum(visibility) == 0:
-                    raise ValueError(
-                        f"{target} is not visible from {obs_site.name} between {d1} and {d2}"
-                    )
-
             # observation constraints
             utc_offset = (
                 tz(timezone).localize(obs_start.datetime).strftime("%z")
             )
 
             if args.verbose:
-                print(
-                    f"Target: {target} | ra, dec=({target_coord.to_string()})"
-                )
+                print(f"\tra, dec=({target_coord.to_string()})")
                 print(
                     f"Site: {obs_site.name} ({lat}d, {lon}d, {elev}m, UT{utc_offset[:3]})"
                 )
@@ -302,6 +295,30 @@ if __name__ == "__main__":
                     # TODO: is sun_rise_time on obs_start accurate?
                     max_lt = obs_site.sun_rise_time(obs_start).datetime.time()
                 constraints.append(LocalTimeConstraint(min=min_lt, max=max_lt))
+
+            # check if target is visible each midnight from obs site
+            # if (not args.next_transit) & (baseline < 31):
+            #     # TODO: very slow for long baseline!
+            #     midnights = []
+            #     for n in range(int(baseline)):
+            #         # get midnight times each day between obs_start and obs_end
+            #         night = obs_start + n * u.day
+            #         midnight = obs_site.sun_set_time(night) + 5 * u.hour
+            #         midnights.append(midnight)
+            #     visibility = obs_site.target_is_up(midnights, target_coord)
+            #     if sum(visibility) == 0:
+            #         raise ValueError(
+            #             f"{target} is not visible from {obs_site.name} between {d1} and {d2}"
+            #         )
+            months = months_observable(
+                constraints,
+                obs_site,
+                [target_coord],
+                time_grid_resolution=5 * u.hour,
+            )
+            if len(months[0]) == 0:
+                errmsg = f"Target is not observable from {obs_site.name}"
+                raise ValueError(errmsg)
 
             # set-up transit parameters
             if (
@@ -356,6 +373,7 @@ if __name__ == "__main__":
                 partial = midtransit_times
             else:
                 partial = []
+                # FIXME: exit here?
             # is event observable during ingress and egress?
             ing_egr_times = system.next_primary_ingress_egress_time(
                 obs_start, n_eclipses=baseline * NTRANSIT_PER_DAY
@@ -373,10 +391,6 @@ if __name__ == "__main__":
                 # make sure full transit happens at night
                 assert np.all(obs_site.is_night(ing_egr_times.flatten()))
                 full = ing_egr_times
-            else:
-                full = []
-
-            if len(full) > 0:
                 # first transit
                 ing, mid, egr = parse_ing_egr(full[0])
                 d0 = format_datetime(mid.datetime)
@@ -386,84 +400,131 @@ if __name__ == "__main__":
                     )
                 else:
                     print(f"{len(full)} full transits between {d1} & {d2}.")
+                if args.plot_target:
+                    # plot only first transit
+                    print("Showing the first full transit")
+                    fig = plot_full_transit(
+                        full[0],
+                        target_coord,
+                        obs_site,
+                        name=target,
+                        ephem_label=ephem_label,
+                        night_only=night_only,
+                    )
+                    pl.show()
             else:
-                if len(partial) > 0:
-                    errmsg = f"No full transit, only {len(partial)} partials between {d1} & {d2} UT."
+                full = []
+                if nevents_partial > 0:
+                    partial = midtransit_times
+                    print(
+                        f"No full transit, only {nevents_partial} partials between {d1} & {d2} UT."
+                    )
+                    if args.plot_target:
+                        # plot only first transit
+                        print("Showing the first partial transit")
+                        fig = plot_partial_transit(
+                            partial[0],
+                            target_coord,
+                            obs_site,
+                            name=target,
+                            transit_duration=dur,
+                            ephem_label=ephem_label,
+                            night_only=night_only,
+                        )
+                        pl.show()
                 else:
+                    partial = []
                     errmsg = f"{target} ra,deg=({target_coord.to_string()}) is likely not observable from {site_name}."
-                raise ValueError(errmsg)
-
-            if args.plot_target:
-                # plot only first transit
-                print("Showing the first transit")
-                ing_egr = full[0]
-                fig = plot_full_transit(
-                    ing_egr,
-                    target_coord,
-                    obs_site,
-                    name=target,
-                    ephem_label=ephem_label,
-                )
-                pl.show()
+                    raise ValueError(errmsg)
 
             if args.save:
                 # save all figures
                 if not path.exists(outdir):
                     makedirs(outdir)
 
-                # if path.exists() and (not args.clobber):
+                # TODO: track which image is saved
+                if nevents_full > 0:
+                    # save each full transit figure
+                    for ing_egr in full:
+                        ing, mid, egr = parse_ing_egr(ing_egr)
+                        d = format_datetime(mid.datetime)
+                        fp1 = path.join(
+                            outdir, f"{target}_{obs_site.name}_{d}_full.png"
+                        )
+                        fig = plot_full_transit(
+                            ing_egr,
+                            target_coord,
+                            obs_site,
+                            name=target,
+                            ephem_label=ephem_label,
+                            night_only=night_only,
+                        )
+                        fig.savefig(fp1, bbox_inches="tight")
+                        if args.verbose:
+                            print(f"Saved: {fp1}")
 
-                if args.next_transit | (len(full) == 1):
-                    # save only one
-                    ing_egr = full[0]
-                    fp1 = path.join(
-                        outdir, f"{target}_{obs_site.name}_{d0}.png"
+                        # if more, use transit query dates
+                        fp2 = path.join(
+                            outdir,
+                            f"{target}_{obs_site.name}_{d1}_{d2}_full.csv",
+                        )
+                        if args.next_transit | (len(full) == 1):
+                            # if 1 event, use transit midpoint
+                            d0 = format_datetime(mid.datetime)
+                            fp2 = path.join(
+                                outdir,
+                                f"{target}_{obs_site.name}_{d0}_full.csv",
+                            )
+                            break
+                    # save predictions to 1 csv file
+                    np.savetxt(
+                        fp2, parse_ing_egr_list(full), delimiter=",", fmt="%s"
                     )
-                    fig = plot_full_transit(
-                        ing_egr,
-                        target_coord,
-                        obs_site,
-                        name=target,
-                        ephem_label=ephem_label,
-                    )
-                    fig.savefig(fp1, bbox_inches="tight")
                     if args.verbose:
-                        print(f"Saved: {fp1}")
+                        print(f"Saved: {fp2}\n")
                 else:
-                    if len(full) > 1:
-                        # save each figure
-                        for ing_egr in full:
-                            ing, mid, egr = parse_ing_egr(ing_egr)
-                            d = format_datetime(mid.datetime)
-                            fp1 = path.join(
-                                outdir, f"{target}_{obs_site.name}_{d}.png"
+                    # save each partial transit figure except when -n
+                    for mid in partial:
+                        d = format_datetime(mid.datetime)
+                        fp1 = path.join(
+                            outdir, f"{target}_{obs_site.name}_{d}_partial.png"
+                        )
+                        fig = plot_partial_transit(
+                            mid,
+                            target_coord,
+                            obs_site,
+                            name=target,
+                            transit_duration=dur,
+                            ephem_label=ephem_label,
+                            night_only=night_only,
+                        )
+                        fig.savefig(fp1, bbox_inches="tight")
+                        if args.verbose:
+                            print(f"Saved: {fp1}")
+                        # if more, use transit query dates
+                        fp2 = path.join(
+                            outdir,
+                            f"{target}_{obs_site.name}_{d1}_{d2}_partial.csv",
+                        )
+                        if args.next_transit | (len(partial) == 1):
+                            # if 1 event, use transit midpoint
+                            d0 = format_datetime(mid.datetime)
+                            fp2 = path.join(
+                                outdir,
+                                f"{target}_{obs_site.name}_{d0}_partial.csv",
                             )
-                            fig = plot_full_transit(
-                                ing_egr,
-                                target_coord,
-                                obs_site,
-                                name=target,
-                                ephem_label=ephem_label,
-                            )
-                            fig.savefig(fp1, bbox_inches="tight")
-                            if args.verbose:
-                                print(f"Saved: {fp1}")
-                # save predictions to 1 csv file
-                if args.next_transit | len(full) == 1:
-                    # if 1 event, use transit midpoint
-                    fp2 = path.join(
-                        outdir, f"{target}_{obs_site.name}_{d0}.csv"
+                            break
+                    # save predictions to 1 csv file
+                    np.savetxt(
+                        fp2,
+                        parse_mid_list(full, transit_duration=dur),
+                        delimiter=",",
+                        fmt="%s",
                     )
-                else:
-                    # if more, use transit query dates
-                    fp2 = path.join(
-                        outdir, f"{target}_{obs_site.name}_{d1}_{d2}.csv"
-                    )
-                np.savetxt(
-                    fp2, parse_ing_egr_list(full), delimiter=",", fmt="%s"
-                )
-                if args.verbose:
-                    print(f"Saved: {fp2}")
+                    if args.verbose:
+                        print(f"Saved: {fp2}\n")
+            if args.verbose:
+                print("=" * 50)
         except Exception:
             # Get current system exception
             ex_type, ex_value, ex_traceback = sys.exc_info()

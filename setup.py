@@ -11,6 +11,11 @@ setup(
     author_email="jpdeleon@astron.s.u-tokyo.ac.jp",
     license="MIT",
     packages=find_packages(),
-    scripts=["scripts/mirai"],  # "scripts/toi"],
+    scripts=[
+        "scripts/mirai",
+        "scripts/visible_months",
+        # "scripts/list_toi",
+        # "scripts/list_ctoi"
+    ],
     install_requires=["astropy", "astroquery", "astroplan", "pytz", "pandas"],
 )

@@ -58,15 +58,18 @@ tois = tois.drop_duplicates(
     subset=["Planet Radius (R_Earth)", "Planet Radius (R_Earth) err"],
     keep="first",
 )
+Rp = tois["Planet Radius (R_Earth)"]
+Rp_err = tois["Planet Radius (R_Earth) err"]
+Porb = tois["Period (days)"]
+Porb_err = tois["Period (days) err"]
+depth = tois["Depth (mmag)"]
+depth_err = tois["Depth (mmag) err"]
 if args.frac_error:
-    idx1 = (
-        tois["Planet Radius (R_Earth) err"] / tois["Planet Radius (R_Earth)"]
-    ) < args.frac_error
-    idx2 = (
-        tois["Period (days) err"] / tois["Period (days)"]
-    ) < args.frac_error
-    idx3 = (tois["Depth (mmag) err"] / tois["Depth (mmag)"]) < args.frac_error
+    idx1 = (Rp_err / Rp) < args.frac_error
+    idx2 = (Porb_err / Porb) < args.frac_error
+    idx3 = (depth_err / depth) < args.frac_error
     tois = tois[idx1 & idx2 & idx3]
+
 Rp = tois["Planet Radius (R_Earth)"]
 Rp_err = tois["Planet Radius (R_Earth) err"]
 Porb = tois["Period (days)"]
@@ -79,7 +82,7 @@ Teq = tois["Planet Equil Temp (K)"]
 depth = tois["Depth (mmag)"]
 depth_err = tois["Depth (mmag) err"]
 Tmag = tois["TESS Mag"]
-Tmag_err = tois["TESS Mag"]
+Tmag_err = tois["TESS Mag err"]
 distance = tois["Stellar Distance (pc)"]
 distance_err = tois["Stellar Distance (pc) err"]
 
@@ -90,8 +93,8 @@ hi_snr = get_above_lower_limit(10, tois["Planet SNR"], 1, sigma=sigma)
 # multisector = tois['Sectors'].apply(lambda x: True if len(x.split(',')) > 1 else False)
 # site-specific
 coord = SkyCoord(ra=tois["RA"], dec=tois["Dec"], unit=("hourangle", "deg"))
-north = coord.dec.deg > -20
-south = coord.dec.deg < 20
+north = coord.dec.deg > -30
+south = coord.dec.deg < 30
 # star
 bright = get_below_upper_limit(11, Tmag, Tmag_err, sigma=sigma)
 cool = get_below_upper_limit(3500, Teff, Teff_err, sigma=sigma)
@@ -144,7 +147,7 @@ idx = (
     (Porb > 0)  # makes sure no Nan in period
     # & (Rp>0) #makes sure no Nan in radius
     # ---telescope---#
-    # & north
+    & north
     # & south
     # ---transit---#
     & deep
@@ -170,7 +173,7 @@ idx = (
     # & superearth
     # & subneptune
     # & neptune
-    & subsaturn
+    # & subsaturn
     # & saturn
     # & jupiter
     # & inflated
@@ -189,7 +192,7 @@ idx = (
     # & radius_gap
 )
 
-filename_header = "subsaturn"
+filename_header = "all"
 if args.save:
     # just save list of toi
     fp = path.join(args.outdir, filename_header + "_tois.txt")
