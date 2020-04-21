@@ -1,4 +1,8 @@
 # mirai
+[![Build Status](https://travis-ci.com/jpdeleon/mirai.svg?branch=master)](https://travis-ci.com/jpdeleon/mirai)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/ambv/black)
+[![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
 transit ephemeris calculator
 * main referece: [astroplan](https://astroplan.readthedocs.io/en/latest/tutorials/periodic.html)
 * see also: [NeXSci page](https://exoplanetarchive.ipac.caltech.edu/docs/transit_algorithms.html)
@@ -7,7 +11,12 @@ transit ephemeris calculator
 ```shell
 $ git clone https://github.com/jpdeleon/mirai.git
 $ cd mirai && python setup.py install
-$ python setup.py develop
+$ python setup.py develop (optional)
+```
+
+## test
+```
+$ sh tests/test_predictions.sh
 ```
 
 ## examples

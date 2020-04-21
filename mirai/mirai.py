@@ -123,15 +123,24 @@ def format_datetime(datetime, datefmt="%Y%b%d"):
 
 
 def get_t0_per_dur(target, **kwargs):
+    """
+    If TIC is given, the TOI table is searched first
+    then CTOI table.
+    """
     if target[:3] == "toi":
-        toiid = float(target[3:])
-        toi = get_toi(toiid, **kwargs)
+        if len(str(target).split(".")) == 2:
+            toi = get_toi(target[3:], **kwargs)
+        else:
+            toi = get_toi(target[3:] + ".01", **kwargs)
         t0 = toi["Epoch (BJD)"].values[0]
         per = toi["Period (days)"].values[0]
         dur = toi["Duration (hours)"].values[0] / 24
     elif target[:4] == "ctoi":
         ctoiid = float(target[4:])
-        ctoi = get_ctoi(ctoiid, **kwargs)
+        if len(str(target).split(".")) == 2:
+            ctoi = get_ctoi(target[4:], **kwargs)
+        else:
+            ctoi = get_ctoi(target[4:] + ".01", **kwargs)
         t0 = ctoi["Midpoint (BJD)"].values[0]
         per = ctoi["Period (days)"].values[0]
         dur = ctoi["Duration (hrs)"].values[0] / 24
@@ -163,8 +172,8 @@ def get_t0_per_dur(target, **kwargs):
             ctois = get_ctois(**kwargs)
             ctoi = ctois[ctois["TIC ID"].isin([ticid])]
             if len(ctoi) > 0:
-                print("Using ephemeris from TOI")
-                ctoiid = int(ctoi["CTOI"].values[0])
+                print("Using ephemeris from CTOI")
+                ctoiid = ctoi["CTOI"].values[0]
                 ctoi = get_ctoi(ctoiid, **kwargs)
                 t0 = ctoi["Midpoint (BJD)"].values[0]
                 per = ctoi["Period (days)"].values[0]
@@ -220,7 +229,7 @@ def get_ephem_from_nexsci(target):
     return (t0, per, dur)
 
 
-def parse_target_coord(target):
+def parse_target_coord(target, **kwargs):
     """
     parse target string and query coordinates; e.g.
     toi.X, ctoi.X, tic.X, gaiaX, epicX, Simbad name
@@ -238,10 +247,10 @@ def parse_target_coord(target):
         # name or ID
         if target[:3] == "toi":
             toiid = float(target[3:])
-            coord = get_coord_from_toiid(toiid)
+            coord = get_coord_from_toiid(toiid, **kwargs)
         elif target[:4] == "ctoi":
             ctoiid = float(target[4:])
-            coord = get_coord_from_ctoiid(ctoiid)
+            coord = get_coord_from_ctoiid(ctoiid, **kwargs)
         elif target[:3] == "tic":
             # TODO: requires int for astroquery.mast.Catalogs to work
             if len(target[3:].split(".")) == 2:

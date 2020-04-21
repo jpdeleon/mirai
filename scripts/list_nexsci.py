@@ -9,7 +9,7 @@ Source:
 from os import path
 import argparse
 
-# import numpy as np
+import numpy as np
 import astropy.units as u
 from astroquery.nasa_exoplanet_archive import NasaExoplanetArchive
 from astropy.coordinates import SkyCoord
@@ -17,7 +17,12 @@ import pandas as pd
 
 pd.options.display.float_format = "{:.2f}".format
 
-from mirai.mirai import get_tois, get_between_limits, get_above_lower_limit, get_below_upper_limit
+from mirai.mirai import (
+    get_tois,
+    get_between_limits,
+    get_above_lower_limit,
+    get_below_upper_limit,
+)
 
 arg = argparse.ArgumentParser()
 arg.add_argument(
@@ -32,23 +37,23 @@ arg.add_argument(
 )
 args = arg.parse_args()
 
-output_colums = ",".split(
-    ","
-)
+output_colums = ",".split(",")
 
 # fetch transiting planets from nexsci
 archive = NasaExoplanetArchive.get_confirmed_planets_table(cache=False)
-# transit =
-teff = observed_planets["st_teff"]  # stellar effective temperature
-rstar = observed_planets["st_rad"]  # stellar radius
-a = observed_planets["pl_orbsmax"]  # orbital semimajor axis
+transit = archive[archive["method"] == "transit"]
+teff = transit["st_teff"]  # stellar effective temperature
+rstar = transit["st_rad"]  # stellar radius
+a = transit["pl_orbsmax"]  # orbital semimajor axis
 teq = (teff * np.sqrt(rstar / (2 * a))).decompose()
 
 # ---define filters---#
 # transit
+Porb = transit["pl_orbper"]
 # multisector = tois['Sectors'].apply(lambda x: True if len(x.split(',')) > 1 else False)
 # site-specific
 # star
+bright = transit["st_Vmag"] < 11
 # planet
 # size
 # orbit
@@ -62,8 +67,8 @@ idx = (
     # & north
     # & south
     # ---transit---#
-    & deep
-    & hi_snr
+    # & deep
+    # & hi_snr
     # ---star---#
     # & nearby
     & bright

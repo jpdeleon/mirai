@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 r"""
-Transit and ephemeris calculator
-Note: eclipse times are computed without any barycentric corrections
-see also https://github.com/nespinoza/exotoolbox/blob/master/exotoolbox/utils.py#L779
+Visibility calculator using astroplan
 """
 from os import makedirs, path
 import sys

@@ -55,7 +55,7 @@ if __name__ == "__main__":
     help = (
         "target name/coord e.g. EPICx/K2x or TIC/TOIx or WASP-x or Gaia DR2x\n"
     )
-    help += "or 1:12:43.2, +1:12:43 (hms, dms) or 18.18, 1.21 (deg, deg)"
+    help += "or '1:12:43.2 +1:12:43' (hms, dms) or 18.18, 1.21 (deg, deg)"
     arg.add_argument("target", help=help, type=str)
     arg.add_argument(
         "-t0", "--midtransit", help="transit midpoint [JD]", type=float
@@ -203,7 +203,7 @@ if __name__ == "__main__":
         if args.verbose:
             print("=" * 50)
             print(f"Target: {target}")
-        target_coord = parse_target_coord(target)
+        target_coord = parse_target_coord(target, clobber=args.clobber)
         # use target name as name of output directory
         outdir = args.outdir if args.outdir is not None else target
 
@@ -328,7 +328,7 @@ if __name__ == "__main__":
             ):
                 t0, per, dur = args.midtransit, args.period, args.duration
             else:
-                t0, per, dur = get_t0_per_dur(target)
+                t0, per, dur = get_t0_per_dur(target, clobber=args.clobber)
 
             # more transits are computed for shorter periods
             NTRANSIT_PER_DAY = 1 / per * 1.5 if per < 1 else 1.5
@@ -396,7 +396,7 @@ if __name__ == "__main__":
                 d0 = format_datetime(mid.datetime)
                 if args.next_transit:
                     print(
-                        f"Next full transit of {target} from {site_name} is on {mid.tdb.iso} UT (midpoint)."
+                        f"Next full transit of {target} at {site_name} is on {mid.tdb.iso} UT (midpoint)."
                     )
                 else:
                     print(f"{len(full)} full transits between {d1} & {d2}.")
@@ -434,7 +434,7 @@ if __name__ == "__main__":
                         pl.show()
                 else:
                     partial = []
-                    errmsg = f"{target} ra,deg=({target_coord.to_string()}) is likely not observable from {site_name}."
+                    errmsg = f"{target} ra,deg=({target_coord.to_string()}) is likely not observable at {site_name}."
                     raise ValueError(errmsg)
 
             if args.save:
