@@ -14,6 +14,9 @@ from astroplan.plots import plot_altitude
 
 from mirai.config import DATA_PATH
 
+TESS_TIME_OFFSET = 2457000.0  # TBJD = BJD - 2457000.0
+K2_TIME_OFFSET = 2454833  # BKJD
+
 
 __all__ = [
     "SITES",
@@ -23,6 +26,7 @@ __all__ = [
     "get_toi",
     "plot_full_transit",
     "plot_partial_transit",
+    "get_ephem_from_file",
     "get_ephem_from_nexsci",
     "get_t0_per_dur",
     "format_datetime",
@@ -45,6 +49,7 @@ SITES = {
     "MCDO": (30.67, -104.02, 2070, "UCT"),  # Texas, Central Time
     "WISE": (30.5958, 34.76333, 875, "Asia/Jerusalem"),  # NRES@WISE
     "OT": (28.291, 343.5033, 2395, "UTC"),  # Teide
+    "ALS": (24.1776, 54.6862, 100, "Etc/GMT+4"),  # Al Sadeem Obs
     "HLK": (20.7075, -156.2561, 3055, "Pacific/Honolulu"),  # Haleakala
     "TNO": (18.59056, 98.48656, 2457, "Asia/Bangkok"),  # Thai national obs
     "CTIO": (
@@ -122,12 +127,16 @@ def format_datetime(datetime, datefmt="%Y%b%d"):
     return datetime.date().strftime(datefmt)
 
 
-def get_t0_per_dur(target, **kwargs):
+def get_t0_per_dur(target, fp=None, **kwargs):
     """
     If TIC is given, the TOI table is searched first
     then CTOI table.
     """
-    if target[:3] == "toi":
+    if fp is not None:
+        errmsg = "only h5 from tql is supported"
+        assert fp.split(".")[-1] == "h5", errmsg
+        t0, per, dur = get_ephem_from_file(fp, verbose=True)
+    elif target[:3] == "toi":
         if len(str(target).split(".")) == 2:
             toi = get_toi(target[3:], **kwargs)
         else:
@@ -211,6 +220,23 @@ def get_t0_per_dur(target, **kwargs):
     assert (per is not None) & (not np.isnan(per)) & (per != 0), "Error in per"
     assert (dur is not None) & (not np.isnan(dur)) & (dur != 0), "Error in dur"
     return (t0, per, dur)
+
+
+def get_ephem_from_file(fp, verbose=True):
+    """read ephem from .h5 file from tql
+    """
+    try:
+        import deepdish as dd
+    except Exception:
+        raise ModuleNotFoundError("pip install deepdish")
+
+    if verbose:
+        print("Loaded: ", fp)
+    d = dd.io.load(fp)
+    per = d["period"]
+    t0 = d["T0"] + TESS_TIME_OFFSET
+    dur = d["duration"]
+    return t0, per, dur
 
 
 def get_ephem_from_nexsci(target):

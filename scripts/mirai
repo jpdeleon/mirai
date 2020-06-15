@@ -15,6 +15,7 @@ import traceback
 # from astroquery.exoplanet_orbit_database import ExoplanetOrbitDatabase
 import numpy as np
 import matplotlib.pyplot as pl
+import pandas as pd
 from astroplan import FixedTarget, Observer, EclipsingSystem
 from astroplan.plots import plot_airmass
 from astroplan import (
@@ -191,18 +192,34 @@ if __name__ == "__main__":
     arg.add_argument(
         "-o", "--outdir", help="output directory", type=str, default=None
     )
+    arg.add_argument(
+        "-fp", "--filepath", help="file with ephemeris", type=str, default=None
+    )
 
     args = arg.parse_args(None if sys.argv[1:] else ["-h"])
     night_only = ~args.show_daytime
     if args.show_site_names:
         # TODO: add this to SITES
         print(EarthLocation.get_site_names())
-
     else:
         target = args.target.lower().strip().replace("-", "")
         if args.verbose:
             print("=" * 50)
             print(f"Target: {target}")
+
+        if args.filepath:
+            if args.verbose:
+                print(f"Reading ephemeris from {args.filepath}")
+            df = pd.read_csv(args.filepath, delimiter=",")
+            row = df.loc[df.target_name == args.target]
+            if len(row) == 0:
+                raise ValueError(f"{args.target} not found in {args.filepath}")
+            elif len(row) > 1:
+                raise ValueError(
+                    f"multiple entris of {args.target} found in {args.filepath}"
+                )
+            # convert single column to series
+            row = row.squeeze()
         target_coord = parse_target_coord(target, clobber=args.clobber)
         # use target name as name of output directory
         outdir = args.outdir if args.outdir is not None else target
@@ -225,25 +242,29 @@ if __name__ == "__main__":
             obs_end = Time(" ".join(args.end_datetime))
         baseline = obs_end.jd - obs_start.jd
 
-        site_name = args.obs_site_name.upper()
+        if args.filepath:
+            site_name = row.site.upper()
+        else:
+            site_name = args.obs_site_name.upper()
+        lat = args.site_lat
+        lon = args.site_lon
+        elev = args.site_elev
         timezone = args.timezone
 
         try:
             # observatory site
-            if site_name is not None:
-                all_sites = list(SITES.keys())
-                # TODO: add LCO in sites using EarthLocation
-                assert site_name in all_sites, f"-site={all_sites}"
-                lat, lon, elev, timezone = SITES[site_name]
-            elif (
+            if (
                 (lat is not None)
                 & (lon is not None)
                 & (elev is not None)
                 & (timezone is not None)
             ):
-                lat = args.site_lat
-                lon = args.site_lon
-                elev = args.site_elev
+                site_name = "custom"
+            elif site_name is not None:
+                all_sites = list(SITES.keys())
+                # TODO: add LCO in sites using EarthLocation
+                assert site_name in all_sites, f"-site={all_sites}"
+                lat, lon, elev, timezone = SITES[site_name]
             else:
                 # default: Observatorio del Teide
                 lat, lon, elev, timezone = SITES["OT"]
@@ -321,14 +342,18 @@ if __name__ == "__main__":
                 raise ValueError(errmsg)
 
             # set-up transit parameters
-            if (
+            if args.filepath:
+                t0, per, dur = row.midtransit, row.period, row.duration
+            elif (
                 (args.midtransit is not None)
                 & (args.period is not None)
                 & (args.duration is not None)
             ):
                 t0, per, dur = args.midtransit, args.period, args.duration
             else:
-                t0, per, dur = get_t0_per_dur(target, clobber=args.clobber)
+                t0, per, dur = get_t0_per_dur(
+                    target, fp=args.filepath, clobber=args.clobber
+                )
 
             # more transits are computed for shorter periods
             NTRANSIT_PER_DAY = 1 / per * 1.5 if per < 1 else 1.5

@@ -1,1 +1,6 @@
 pre-commit
+astroquery
+astroplan
+pytz
+pandas
+#deepdish

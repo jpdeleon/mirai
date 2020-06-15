@@ -41,15 +41,17 @@ arg.add_argument(
 arg.add_argument(
     "-f",
     "--frac_error",
-    help="allowed fractional error in parameter",
-    default=None,
+    help="allowed fractional error in parameter [%] (default=50)",
+    default=50,
     type=float,
 )
 args = arg.parse_args()
 
 # fetch toi table from exofop tess
-tois = get_tois(remove_FP=True, clobber=False, verbose=False)
-output_colums = "TOI,Period (days),Planet Radius (R_Earth),Planet Radius (R_Earth) err".split(
+tois = get_tois(
+    remove_FP=True, clobber=False, verbose=False, remove_known_planets=False
+)
+output_colums = "TOI,Period (days),Planet Radius (R_Earth),Planet Radius (R_Earth) err,TESS Mag,Comments".split(
     ","
 )
 sigma = args.sigma
@@ -128,6 +130,7 @@ short = get_below_upper_limit(3, Porb, Porb_err, sigma=sigma)
 medium = get_between_limits(3, 10, Porb, Porb_err, sigma=sigma)
 long = get_above_lower_limit(10, Porb, Porb_err, sigma=sigma)
 # special
+multi = tois
 usp = get_below_upper_limit(1, Porb, Porb_err, sigma=sigma)
 hotjup = short & get_above_lower_limit(11, Rp, Rp_err, sigma=sigma)
 radius_gap = get_between_limits(1.8, 2, Rp, Rp_err, sigma=sigma)
@@ -150,13 +153,13 @@ idx = (
     & north
     # & south
     # ---transit---#
-    & deep
-    & hi_snr
+    # & deep
+    # & hi_snr
     # ---star---#
     # & nearby
-    # & bright
+    & bright
     # & cool
-    # & dwarf
+    & dwarf
     # & hot
     # & giant
     # & sunlike
@@ -183,7 +186,7 @@ idx = (
     # & medium
     # & long
     # ---special---#
-    # & usp
+    & usp
     # & hotjup
     # & tropical & subneptune
     # & tropical & subsaturn
