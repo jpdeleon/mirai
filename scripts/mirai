@@ -204,20 +204,19 @@ if __name__ == "__main__":
     else:
         target = args.target.lower().strip().replace("-", "")
         if args.verbose:
-            print("=" * 50)
+            print("\n")  # ("=" * 50)
             print(f"Target: {target}")
 
         if args.filepath:
-            if args.verbose:
-                print(f"Reading ephemeris from {args.filepath}")
             df = pd.read_csv(args.filepath, delimiter=",")
-            row = df.loc[df.target_name == args.target]
+            row = df.loc[df.target_name == target]
             if len(row) == 0:
-                raise ValueError(f"{args.target} not found in {args.filepath}")
+                errmsg = f"{args.target} not found in {args.filepath}:\n{df}"
+                raise ValueError(errmsg)
             elif len(row) > 1:
-                raise ValueError(
-                    f"multiple entris of {args.target} found in {args.filepath}"
-                )
+                errmsg = f"multiple entries of {args.target} found in {args.filepath}\n"
+                errmsg += f"{row}"
+                raise ValueError(errmsg)
             # convert single column to series
             row = row.squeeze()
         target_coord = parse_target_coord(target, clobber=args.clobber)
@@ -343,6 +342,8 @@ if __name__ == "__main__":
 
             # set-up transit parameters
             if args.filepath:
+                if args.verbose:
+                    print(f"Reading ephemeris from {args.filepath}")
                 t0, per, dur = row.midtransit, row.period, row.duration
             elif (
                 (args.midtransit is not None)
