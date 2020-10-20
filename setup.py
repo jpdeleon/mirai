@@ -11,7 +11,11 @@ setup(
     author_email="jpdeleon@astron.s.u-tokyo.ac.jp",
     license="MIT",
     packages=find_packages(),
-    scripts=[
+    package_data={"mirai": [
+        "data/TOIs.csv",
+        "data/CTOIs.csv",
+        ]},
+        scripts=[
         "scripts/mirai",
         "scripts/visible_months",
         # "scripts/list_toi",
